@@ -2,21 +2,12 @@
 
 **Hear Me Out** is an interactive evaluation and bias discovery platform for speech-to-speech conversational AI. These speech-to-speech models process spoken language directly from audio, without first converting it to text. They promise more natural, expressive, and emotionally aware interactions by retaining prosody, intonation, and other vocal cues throughout the conversation.
 
-In the demo video, we explore the **Moshi** speech-to-speech model and its responses:
-
-https://github.com/user-attachments/assets/34097dc4-9290-4dc9-acf7-30779f2701df
-
-
-
-### Example 1: Emotional Awareness
-
-Notice how the model disambiguates between inputs with levity and frustration, correctly reflecting the speaker's emotional state in its responses. This distinction adds a more human-like quality to the interaction.
-
-### Example 2: Voice Conversion
-
-By applying voice transformations, we simulate how the model might respond to different speaker characteristics. While the differences in these responses are more subtle and inconsistent under repetition, hearing oneself in another voice opens up new perspectives.
 
 ---
+The Hear Me Out block diagram
+<img width="1648" alt="hearmeout-BD" src="https://github.com/user-attachments/assets/b282ad4a-354f-4452-ada2-59fafae65629" />
+---
+
 
 ## Features
 
@@ -31,5 +22,17 @@ By applying voice transformations, we simulate how the model might respond to di
 Through this immersive experience, we hope users will gain insights into identity, voice, and AI behavior. Ultimately, we aim to surface meaningful questions and inspire future research that promotes fairness and inclusivity with **Hear Me Out**.
 
 ---
-The Hear Me Out block diagram
-<img width="1648" alt="hearmeout-BD" src="https://github.com/user-attachments/assets/b282ad4a-354f-4452-ada2-59fafae65629" />
+
+
+In the demo video, we explore the **Moshi** speech-to-speech model and its responses:
+
+https://github.com/user-attachments/assets/34097dc4-9290-4dc9-acf7-30779f2701df
+
+
+### Example 1: Emotional Awareness
+
+Notice how the model disambiguates between inputs with levity and frustration, correctly reflecting the speaker's emotional state in its responses. This distinction adds a more human-like quality to the interaction.
+
+### Example 2: Voice Conversion
+
+By applying voice transformations, we simulate how the model might respond to different speaker characteristics. While the differences in these responses are more subtle and inconsistent under repetition, hearing oneself in another voice opens up new perspectives.
