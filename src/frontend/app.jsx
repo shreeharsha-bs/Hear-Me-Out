@@ -193,6 +193,7 @@ const App = () => {
         <div className="flex w-full">
           <div className="w-5/6 overflow-y-auto max-h-64">
             <TextOutput warmupComplete={warmupComplete} completedSentences={completedSentences} pendingSentence={pendingSentence} />
+            <TextOutput isRecording={isRecording} completedSentences={completedSentences} pendingSentence={pendingSentence} />
           </div>
           <div className="w-1/6 ml-4 pl-4">
             <AudioControl recorder={recorder} amplitude={amplitude} />
@@ -259,7 +260,7 @@ const AudioControl = ({ recorder, amplitude }) => {
   );
 };
 
-const TextOutput = ({ warmupComplete, completedSentences, pendingSentence }) => {
+const TextOutput = ({ isRecording, completedSentences, pendingSentence }) => {
   const containerRef = useRef(null);
   const allSentences = [...completedSentences, pendingSentence];
   if (pendingSentence.length === 0 && allSentences.length > 1) {
@@ -274,15 +275,19 @@ const TextOutput = ({ warmupComplete, completedSentences, pendingSentence }) => 
 
   return (
     <div ref={containerRef} className="flex flex-col-reverse overflow-y-auto max-h-64 pr-2">
-      {warmupComplete ? (
-        allSentences.map((sentence, index) => (
+      {isRecording ? (
+        allSentences.map((sentence, index) => 
           <p key={index} className="text-gray-300 my-2">{sentence}</p>
         )).reverse()
       ) : (
-        <p className="text-gray-400 animate-pulse">Click Start to start experiencing!</p>
+        <p className=\"text-gray-400\">Ask the conversational AI anything, and hear how it may respond differently depending on what your voice sounds like! If you want some tips, here are a few questions we think give interesting responses: Ask about walking home alone after dark Ask what you can do to get people at work to like you more</p>
       )}
     </div>
-  );
+  if (!isRecording) {
+    return (
+      <p className="text-gray-400">Ask the conversational AI anything, and hear how it may respond differently depending on what your voice sounds like! If you want some tips, here are a few questions we think give interesting responses: Ask about walking home alone after dark Ask what you can do to get people at work to like you more</p>
+    );
+  }
 };
 
 const container = document.getElementById("react");
