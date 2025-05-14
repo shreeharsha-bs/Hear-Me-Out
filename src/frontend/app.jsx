@@ -81,6 +81,10 @@ const App = () => {
   const recordingStreamRef = useRef(null); // Store the media stream for WAV recording
   const mediaRecorderRef = useRef(null); // MediaRecorder for WAV recording
   const [recordingAvailable, setRecordingAvailable] = useState(false); // Flag to indicate if a recording is available to save
+  
+  // Store model responses
+  const [modelResponseChunks, setModelResponseChunks] = useState([]); // Store the audio chunks from model responses
+  const [modelResponseAvailable, setModelResponseAvailable] = useState(false); // Flag to indicate if model responses are available
 
   // Audio playback
   const [audioContext] = useState(() => new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 }));
@@ -100,9 +104,11 @@ const App = () => {
 
   // Mic Input: start the Opus recorder
   const startRecording = async () => {
-    // Reset recorded chunks for new recording
+    // Reset recorded chunks and model responses for new recording
     setRecordedChunks([]);
     setRecordingAvailable(false);
+    setModelResponseChunks([]);
+    setModelResponseAvailable(false);
     
     // prompts user for permission to use microphone
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -152,6 +158,7 @@ const App = () => {
     processAudio();
 
     // Setup WAV recording using MediaRecorder
+    // Note: We still collect as WebM but convert to WAV on save
     const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
     mediaRecorderRef.current = mediaRecorder;
 
@@ -193,6 +200,9 @@ const App = () => {
       socketRef.current.close();
       socketRef.current = null;
     }
+    
+    // Finalize model response recording when stopping
+    setModelResponseAvailable(modelResponseChunks.length > 0);
   };
   
   // Clean up resources when component unmounts
@@ -202,29 +212,101 @@ const App = () => {
     };
   }, []);
 
-  // Function to save the recording to a WAV file
-  const saveRecording = () => {
+  // Function to save the user's voice recording to a WAV file
+  const saveRecording = async () => {
     if (recordedChunks.length === 0) {
-      console.log("No recording available to save");
+      console.log("No user recording available to save");
       return;
     }
 
-    const blob = new Blob(recordedChunks, { type: 'audio/webm' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.style.display = 'none';
-    a.href = url;
-    a.download = `hear-me-out-recording-${getTimestamp()}.webm`;
-    document.body.appendChild(a);
-    a.click();
-    
-    // Clean up
-    setTimeout(() => {
-      URL.revokeObjectURL(url);
-      document.body.removeChild(a);
-    }, 100);
+    try {
+      // Convert WebM blob to audio data
+      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      const blob = new Blob(recordedChunks, { type: 'audio/webm' });
+      const arrayBuffer = await blob.arrayBuffer();
+      const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+      
+      // Get PCM data from the audio buffer
+      const channelData = audioBuffer.getChannelData(0);
+      const sampleRate = audioBuffer.sampleRate;
+      
+      // Create a WAV file
+      const wavBlob = createWavFile(channelData, sampleRate);
+      
+      // Download the WAV file
+      const url = URL.createObjectURL(wavBlob);
+      const a = document.createElement('a');
+      a.style.display = 'none';
+      a.href = url;
+      a.download = `hear-me-out-user-voice-${getTimestamp()}.wav`;
+      document.body.appendChild(a);
+      a.click();
+      
+      // Clean up
+      setTimeout(() => {
+        URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+      }, 100);
+    } catch (err) {
+      console.error("Error converting user recording to WAV:", err);
+    }
   };
 
+  // Function to save the AI's voice responses to a WAV file
+  const saveModelResponses = () => {
+    if (modelResponseChunks.length === 0) {
+      console.log("No AI voice responses available to save");
+      return;
+    }
+    
+    // Process all chunks to create a single WAV file
+    const processChunks = () => {
+      // Get the sample rate (use the first chunk's sample rate)
+      const sampleRate = modelResponseChunks[0].sampleRate || 48000;
+      
+      // Calculate total length of all audio data
+      const totalLength = modelResponseChunks.reduce((total, chunk) => total + chunk.data.length, 0);
+      const concatenatedData = new Float32Array(totalLength);
+      
+      // Concatenate all audio data into a single Float32Array
+      let offset = 0;
+      for (const chunk of modelResponseChunks) {
+        concatenatedData.set(chunk.data, offset);
+        offset += chunk.data.length;
+      }
+      
+      // Create a single WAV file from the concatenated data
+      if (concatenatedData.length > 0) {
+        const wavBlob = createWavFile(concatenatedData, sampleRate);
+        
+        // Download the WAV file
+        const url = URL.createObjectURL(wavBlob);
+        const a = document.createElement('a');
+        a.style.display = 'none';
+        a.href = url;
+        a.download = `hear-me-out-ai-voice-${getTimestamp()}.wav`;
+        document.body.appendChild(a);
+        a.click();
+        
+        // Clean up
+        setTimeout(() => {
+          URL.revokeObjectURL(url);
+          document.body.removeChild(a);
+        }, 100);
+      } else {
+        console.error("Failed to create WAV file from AI responses");
+      }
+    };
+    
+    try {
+      processChunks();
+    } catch (err) {
+      console.error("Error saving AI responses:", err);
+    }
+  };
+  
+  // Function to save the full conversation (both user and AI voices) - Removed as requested
+  
   // Audio Playback: Prep decoder for converting opus to PCM for audio playback
   useEffect(() => {
     const initializeDecoder = async () => {
@@ -295,6 +377,17 @@ const App = () => {
         // audio data
         const { channelData, samplesDecoded, sampleRate } = await decoderRef.current.decode(new Uint8Array(payload));
         if (samplesDecoded > 0) {
+          // Store raw audio data with its sample rate for later use
+          const audioData = {
+            data: channelData[0],
+            sampleRate: sampleRate
+          };
+          
+          // Store the audio data object instead of a WAV blob
+          setModelResponseChunks(prevChunks => [...prevChunks, audioData]);
+          setModelResponseAvailable(true);
+          
+          // Play the audio
           scheduleAudioPlayback(channelData[0]);
         }
       }
@@ -377,28 +470,38 @@ const App = () => {
                   <AudioControl recorder={recorder} amplitude={amplitude} />
                 </div>
               </div>
-              <div className="flex gap-2 mt-4">
+              <div className="flex flex-wrap gap-2 mt-4">
                 {!isRecording ? (
                   <button
-                    className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
+                    className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded flex items-center"
                     onClick={startWebSocket}
                   >
-                    Start
+                    <span className="mr-1">▶️</span> Start Conversation
                   </button>
                 ) : (
                   <button
-                    className="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded"
+                    className="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded flex items-center"
                     onClick={stopRecording}
                   >
-                    Stop
+                    <span className="mr-1">⏹️</span> Stop Conversation
                   </button>
                 )}
                 {recordingAvailable && (
                   <button
-                    className="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded"
+                    className="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded flex items-center"
                     onClick={saveRecording}
+                    title="Download a recording of your voice input only"
                   >
-                    Save Recording
+                    <span className="mr-1">💬</span> Save Your Voice
+                  </button>
+                )}
+                {modelResponseAvailable && !isRecording && (
+                  <button
+                    className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded flex items-center"
+                    onClick={saveModelResponses}
+                    title="Download a recording of the AI's voice responses only"
+                  >
+                    <span className="mr-1">🤖</span> Save AI Voice
                   </button>
                 )}
               </div>
