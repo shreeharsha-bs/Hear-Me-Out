@@ -2,6 +2,66 @@ const { useRef, useEffect, useState } = React;
 
 const baseURL = "" // points to whatever is serving this app (eg your -dev.modal.run for modal serve, or .modal.run for modal deploy)
 
+// Helper function to generate a timestamp for the filename
+const getTimestamp = () => {
+  const now = new Date();
+  return now.toISOString().replace(/[:.]/g, '-');
+};
+
+// Helper function to convert PCM audio data to WAV format
+const createWavFile = (audioData, sampleRate) => {
+  const numChannels = 1;
+  const bitsPerSample = 16; // 16-bit PCM
+  const bytesPerSample = bitsPerSample / 8;
+  const blockAlign = numChannels * bytesPerSample;
+  const byteRate = sampleRate * blockAlign;
+  const dataSize = audioData.length * bytesPerSample;
+  const bufferSize = 44 + dataSize; // 44 bytes for the WAV header, plus the audio data
+  
+  // Create the WAV file buffer
+  const buffer = new ArrayBuffer(bufferSize);
+  const view = new DataView(buffer);
+
+  // WAV header
+  // "RIFF" chunk descriptor
+  writeString(view, 0, 'RIFF');
+  view.setUint32(4, 36 + dataSize, true); // file size minus RIFF chunk descriptor (8 bytes)
+  writeString(view, 8, 'WAVE');
+
+  // "fmt " sub-chunk
+  writeString(view, 12, 'fmt ');
+  view.setUint32(16, 16, true); // PCM format = 16 bytes
+  view.setUint16(20, 1, true); // PCM format = 1
+  view.setUint16(22, numChannels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, byteRate, true);
+  view.setUint16(32, blockAlign, true);
+  view.setUint16(34, bitsPerSample, true);
+
+  // "data" sub-chunk
+  writeString(view, 36, 'data');
+  view.setUint32(40, dataSize, true);
+
+  // Write the PCM samples
+  let offset = 44;
+  for (let i = 0; i < audioData.length; i++) {
+    // Convert float32 samples (-1.0 to 1.0) to int16 (-32768 to 32767)
+    const sample = Math.max(-1, Math.min(1, audioData[i]));
+    const value = sample < 0 ? sample * 32768 : sample * 32767;
+    view.setInt16(offset, value, true);
+    offset += 2;
+  }
+
+  return new Blob([buffer], { type: 'audio/wav' });
+};
+
+// Helper function to write a string to a DataView
+const writeString = (view, offset, string) => {
+  for (let i = 0; i < string.length; i++) {
+    view.setUint8(offset + i, string.charCodeAt(i));
+  }
+};
+
 const getBaseURL = () => {
   // use current web app server domain to construct the url for the moshi app
   const currentURL = new URL(window.location.href);
@@ -15,6 +75,12 @@ const App = () => {
   // Mic Input
   const [recorder, setRecorder] = useState(null); // Opus recorder
   const [amplitude, setAmplitude] = useState(0); // Amplitude, captured from PCM analyzer
+  
+  // Audio recording for WAV file
+  const [recordedChunks, setRecordedChunks] = useState([]); // Store the audio chunks for WAV recording
+  const recordingStreamRef = useRef(null); // Store the media stream for WAV recording
+  const mediaRecorderRef = useRef(null); // MediaRecorder for WAV recording
+  const [recordingAvailable, setRecordingAvailable] = useState(false); // Flag to indicate if a recording is available to save
 
   // Audio playback
   const [audioContext] = useState(() => new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 }));
@@ -34,8 +100,13 @@ const App = () => {
 
   // Mic Input: start the Opus recorder
   const startRecording = async () => {
+    // Reset recorded chunks for new recording
+    setRecordedChunks([]);
+    setRecordingAvailable(false);
+    
     // prompts user for permission to use microphone
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    recordingStreamRef.current = stream;
 
     const recorder = new Recorder({
       encoderPath: "https://cdn.jsdelivr.net/npm/opus-recorder@latest/dist/encoderWorker.min.js",
@@ -79,6 +150,79 @@ const App = () => {
       requestAnimationFrame(processAudio);
     };
     processAudio();
+
+    // Setup WAV recording using MediaRecorder
+    const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+    mediaRecorderRef.current = mediaRecorder;
+
+    mediaRecorder.ondataavailable = (event) => {
+      if (event.data.size > 0) {
+        setRecordedChunks(prevChunks => [...prevChunks, event.data]);
+      }
+    };
+
+    mediaRecorder.onstop = () => {
+      console.log("WAV recording stopped");
+      setRecordingAvailable(true);
+    };
+
+    // Start capturing audio for WAV file
+    mediaRecorder.start();
+    console.log("WAV recording started");
+  };
+
+  // Stop recording and websocket connection
+  const stopRecording = () => {
+    if (recorder) {
+      recorder.stop();
+      setIsRecording(false);
+      console.log("Opus recording stopped");
+    }
+    
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.stop();
+      console.log("WAV recording stopped");
+    }
+    
+    if (recordingStreamRef.current) {
+      recordingStreamRef.current.getTracks().forEach(track => track.stop());
+      recordingStreamRef.current = null;
+    }
+    
+    if (socketRef.current) {
+      socketRef.current.close();
+      socketRef.current = null;
+    }
+  };
+  
+  // Clean up resources when component unmounts
+  useEffect(() => {
+    return () => {
+      stopRecording();
+    };
+  }, []);
+
+  // Function to save the recording to a WAV file
+  const saveRecording = () => {
+    if (recordedChunks.length === 0) {
+      console.log("No recording available to save");
+      return;
+    }
+
+    const blob = new Blob(recordedChunks, { type: 'audio/webm' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.style.display = 'none';
+    a.href = url;
+    a.download = `hear-me-out-recording-${getTimestamp()}.webm`;
+    document.body.appendChild(a);
+    a.click();
+    
+    // Clean up
+    setTimeout(() => {
+      URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    }, 100);
   };
 
   // Audio Playback: Prep decoder for converting opus to PCM for audio playback
@@ -233,14 +377,31 @@ const App = () => {
                   <AudioControl recorder={recorder} amplitude={amplitude} />
                 </div>
               </div>
-              {!isRecording && (
-                <button
-                  className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded mt-4"
-                  onClick={startWebSocket}
-                >
-                  Start
-                </button>
-              )}
+              <div className="flex gap-2 mt-4">
+                {!isRecording ? (
+                  <button
+                    className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
+                    onClick={startWebSocket}
+                  >
+                    Start
+                  </button>
+                ) : (
+                  <button
+                    className="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded"
+                    onClick={stopRecording}
+                  >
+                    Stop
+                  </button>
+                )}
+                {recordingAvailable && (
+                  <button
+                    className="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded"
+                    onClick={saveRecording}
+                  >
+                    Save Recording
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>
