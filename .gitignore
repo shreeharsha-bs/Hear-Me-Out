@@ -1,0 +1,4 @@
+.DS_Store
+src/__pycache__/app.cpython-312.pyc
+tests/.DS_Store
+src/__pycache__/moshi.cpython-312.pyc
