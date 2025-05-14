@@ -35,7 +35,7 @@ Through this immersive experience, we hope users will gain insights into identit
 2. Moshi websocket server ([`src/moshi.py`](./src/moshi.py))
 
 ---
-
+### To run the whole backend and frontend use: modal serve src.app
 ## Developing Locally
 
 ### Requirements
