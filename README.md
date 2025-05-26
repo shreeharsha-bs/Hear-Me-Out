@@ -26,8 +26,9 @@ Through this immersive experience, we hope users will gain insights into identit
 
 In the demo video, we explore the **Moshi** speech-to-speech model and its responses:
 
-https://github.com/user-attachments/assets/34097dc4-9290-4dc9-acf7-30779f2701df
-
+<video controls width="640">
+  <source src="assets/IS_st_KTH_Hear-Me-Out-4th_draft.mp4" type="video/mp4">
+</video>
 
 ### Example 1: Emotional Awareness
 

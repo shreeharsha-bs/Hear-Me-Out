@@ -35,7 +35,8 @@ Through this immersive experience, we hope users will gain insights into identit
 2. Moshi websocket server ([`src/moshi.py`](./src/moshi.py))
 
 ---
-### To run the whole backend and frontend use: modal serve src.app
+### To run the whole backend and frontend use: 
+# modal serve src.app
 ## Developing Locally
 
 ### Requirements
@@ -43,20 +44,6 @@ Through this immersive experience, we hope users will gain insights into identit
 - `modal` installed in your current Python virtual environment (`pip install modal`)
 - A [Modal](http://modal.com/) account (`modal setup`)
 - A Modal token set up in your environment (`modal token new`)
-
-### Running the Moshi Server
-
-The Moshi server is a [Modal class](https://modal.com/docs/reference/modal.Cls#modalcls) module to load the models and maintain streaming state, with a [FastAPI](https://fastapi.tiangolo.com/) HTTP server to expose a websocket interface over the internet.
-
-To run a [development server](https://modal.com/docs/guide/webhooks#developing-with-modal-serve) for the Moshi module, run this command from the root of the repo:
-
-```shell
-modal serve src.moshi
-```
-
-In the terminal output, you'll find a URL for creating a websocket connection.
-
-While the `modal serve` process is running, changes to any of the project files will be automatically applied. `Ctrl+C` will stop the app.
 
 ### Testing the Websocket Connection
 
