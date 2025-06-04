@@ -102,6 +102,13 @@ const App = () => {
   const [isRecording, setIsRecording] = useState(false); // Recording state
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false); // Sidebar collapse state
 
+  // Voice Conversion state
+  const [sourceAudioFile, setSourceAudioFile] = useState(null);
+  const [targetAudioFile, setTargetAudioFile] = useState(null);
+  const [isConverting, setIsConverting] = useState(false);
+  const [convertedAudioUrl, setConvertedAudioUrl] = useState(null);
+  const [conversionError, setConversionError] = useState(null);
+
   // Mic Input: start the Opus recorder
   const startRecording = async () => {
     // Reset recorded chunks and model responses for new recording
@@ -416,6 +423,51 @@ const App = () => {
     };
   };
 
+  // Voice conversion function
+  const runVoiceConversion = async () => {
+    if (!sourceAudioFile || !targetAudioFile) {
+      setConversionError("Please select both source and target audio files");
+      return;
+    }
+
+    setIsConverting(true);
+    setConversionError(null);
+    setConvertedAudioUrl(null);
+
+    try {
+      const formData = new FormData();
+      formData.append('source_audio', sourceAudioFile);
+      formData.append('target_audio', targetAudioFile);
+      
+      // Optional parameters
+      formData.append('diffusion_steps', '30');
+      formData.append('length_adjust', '1.0');
+      formData.append('inference_cfg_rate', '0.7');
+
+      const response = await fetch('http://127.0.0.1:5001/api/voice-conversion', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Voice conversion failed');
+      }
+
+      // Create a blob URL for the converted audio
+      const audioBlob = await response.blob();
+      const audioUrl = URL.createObjectURL(audioBlob);
+      setConvertedAudioUrl(audioUrl);
+      
+      console.log("Voice conversion completed successfully");
+    } catch (error) {
+      console.error("Voice conversion error:", error);
+      setConversionError(error.message);
+    } finally {
+      setIsConverting(false);
+    }
+  };
+
   return (
     <div className="bg-gray-900 text-white min-h-screen flex flex-col">
       <header className="w-full flex items-center p-4 bg-gray-800 fixed top-0 left-0 z-10">
@@ -470,6 +522,97 @@ const App = () => {
                   <AudioControl recorder={recorder} amplitude={amplitude} />
                 </div>
               </div>
+              
+              {/* Voice Conversion Section */}
+              <div className="mt-6 p-4 bg-gray-700 rounded-lg">
+                <h3 className="text-lg font-semibold text-blue-400 mb-4">Voice Conversion</h3>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                  {/* Source Audio Upload */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                      Source Audio (voice to convert)
+                    </label>
+                    <input
+                      type="file"
+                      accept="audio/*"
+                      onChange={(e) => setSourceAudioFile(e.target.files[0])}
+                      className="block w-full text-sm text-gray-300 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 bg-gray-600 rounded-md"
+                    />
+                    {sourceAudioFile && (
+                      <p className="text-xs text-green-400 mt-1">Selected: {sourceAudioFile.name}</p>
+                    )}
+                  </div>
+                  
+                  {/* Target Audio Upload */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                      Target Audio (voice style reference)
+                    </label>
+                    <input
+                      type="file"
+                      accept="audio/*"
+                      onChange={(e) => setTargetAudioFile(e.target.files[0])}
+                      className="block w-full text-sm text-gray-300 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 bg-gray-600 rounded-md"
+                    />
+                    {targetAudioFile && (
+                      <p className="text-xs text-green-400 mt-1">Selected: {targetAudioFile.name}</p>
+                    )}
+                  </div>
+                </div>
+                
+                {/* Error Display */}
+                {conversionError && (
+                  <div className="mb-4 p-3 bg-red-600 text-white rounded-md text-sm">
+                    Error: {conversionError}
+                  </div>
+                )}
+                
+                {/* Run Voice Conversion Button */}
+                <div className="flex flex-col items-center">
+                  <button
+                    onClick={runVoiceConversion}
+                    disabled={!sourceAudioFile || !targetAudioFile || isConverting}
+                    className={`py-3 px-6 rounded-lg font-semibold flex items-center ${
+                      !sourceAudioFile || !targetAudioFile || isConverting
+                        ? 'bg-gray-500 text-gray-300 cursor-not-allowed'
+                        : 'bg-purple-600 hover:bg-purple-700 text-white'
+                    }`}
+                  >
+                    {isConverting ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                        Converting...
+                      </>
+                    ) : (
+                      <>
+                        <span className="mr-2">🎤</span>
+                        Run Voice Conversion
+                      </>
+                    )}
+                  </button>
+                  
+                  {/* Converted Audio Player */}
+                  {convertedAudioUrl && (
+                    <div className="mt-4 w-full">
+                      <h4 className="text-sm font-medium text-green-400 mb-2">Converted Audio:</h4>
+                      <audio controls className="w-full">
+                        <source src={convertedAudioUrl} type="audio/wav" />
+                        Your browser does not support the audio element.
+                      </audio>
+                      <a
+                        href={convertedAudioUrl}
+                        download="converted_voice.wav"
+                        className="inline-block mt-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm rounded-md"
+                      >
+                        Download Converted Audio
+                      </a>
+                    </div>
+                  )}
+                </div>
+              </div>
+              
+              {/* Original buttons section */}
               <div className="flex flex-wrap gap-2 mt-4">
                 {!isRecording ? (
                   <button
