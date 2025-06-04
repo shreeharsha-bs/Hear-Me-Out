@@ -102,6 +102,9 @@ const App = () => {
   const [isRecording, setIsRecording] = useState(false); // Recording state
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false); // Sidebar collapse state
 
+  // Previous conversations for comparison
+  const [previousConversations, setPreviousConversations] = useState([]);
+
   // Voice Conversion state
   const [sourceAudioFile, setSourceAudioFile] = useState(null);
   const [targetAudioFile, setTargetAudioFile] = useState(null);
@@ -363,6 +366,22 @@ const App = () => {
 
   // WebSocket: open websocket connection and start recording
   const startWebSocket = () => {
+    // Save current conversation if it has content and this isn't the first conversation
+    if (completedSentences.length > 0 || pendingSentence.trim() !== '') {
+      const currentConversation = {
+        id: Date.now(),
+        completedSentences: [...completedSentences],
+        pendingSentence: pendingSentence,
+        warmupComplete: warmupComplete
+      };
+      setPreviousConversations(prev => [...prev, currentConversation]);
+      
+      // Reset current conversation state
+      setCompletedSentences([]);
+      setPendingSentence('');
+      setWarmupComplete(false);
+    }
+
     const endpoint = getBaseURL();
     console.log("Connecting to", endpoint);
     const socket = new WebSocket(endpoint);
@@ -510,151 +529,217 @@ const App = () => {
           )}
         </div>
         
-        {/* Main content - centered */}
-        <div className={`flex-1 flex justify-center items-start transition-all duration-300 ${isSidebarCollapsed ? 'ml-12' : 'ml-80'}`}>
-          <div className="max-w-2xl w-full px-4 py-6">
-            <div className="bg-gray-800 rounded-lg shadow-lg w-full p-6 flex flex-col items-center">
-              <div className="flex w-full">
-                <div className="w-5/6 overflow-y-auto max-h-64">
-                  <TextOutput warmupComplete={warmupComplete} completedSentences={completedSentences} pendingSentence={pendingSentence} />
+        {/* Main content - flexible layout for side-by-side conversations */}
+        <div className={`flex-1 flex justify-start items-start transition-all duration-300 ${isSidebarCollapsed ? 'ml-12' : 'ml-80'} overflow-x-auto`}>
+          <div className="flex gap-4 px-4 py-6 min-w-max">
+            {/* Current conversation - always shown */}
+            <div className="min-w-[32rem] max-w-2xl">
+              <div className="bg-gray-800 rounded-lg shadow-lg w-full p-6 flex flex-col items-center">
+                <div className="flex w-full mb-2">
+                  <h3 className="text-lg font-semibold text-blue-400">
+                    {previousConversations.length > 0 ? 'Current Conversation' : 'Conversation'}
+                  </h3>
                 </div>
-                <div className="w-1/6 ml-4 pl-4">
-                  <AudioControl recorder={recorder} amplitude={amplitude} />
+                <div className="flex w-full">
+                  <div className="w-5/6 overflow-y-auto max-h-64">
+                    <TextOutput warmupComplete={warmupComplete} completedSentences={completedSentences} pendingSentence={pendingSentence} />
+                  </div>
+                  <div className="w-1/6 ml-4 pl-4">
+                    <AudioControl recorder={recorder} amplitude={amplitude} />
+                  </div>
                 </div>
-              </div>
-              
-              {/* Voice Conversion Section */}
-              <div className="mt-6 p-4 bg-gray-700 rounded-lg">
-                <h3 className="text-lg font-semibold text-blue-400 mb-4">Voice Conversion</h3>
                 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                  {/* Source Audio Upload */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-2">
-                      Source Audio (voice to convert)
-                    </label>
-                    <input
-                      type="file"
-                      accept="audio/*"
-                      onChange={(e) => setSourceAudioFile(e.target.files[0])}
-                      className="block w-full text-sm text-gray-300 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 bg-gray-600 rounded-md"
-                    />
-                    {sourceAudioFile && (
-                      <p className="text-xs text-green-400 mt-1">Selected: {sourceAudioFile.name}</p>
-                    )}
+                {/* Voice Conversion Section */}
+                <div className="mt-6 p-4 bg-gray-700 rounded-lg">
+                  <h3 className="text-lg font-semibold text-blue-400 mb-4">Voice Conversion</h3>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                    {/* Source Audio Upload */}
+                    <div className="space-y-2">
+                      <label className="block text-sm font-medium text-gray-300">
+                        Source Audio (voice to convert)
+                      </label>
+                      <input
+                        type="file"
+                        accept="audio/*"
+                        onChange={(e) => setSourceAudioFile(e.target.files[0])}
+                        className="block w-full text-sm text-gray-300 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 bg-gray-600 rounded-md"
+                      />
+                      {sourceAudioFile && (
+                        <div className="px-3 py-1 bg-gray-600 rounded-md">
+                          <p className="text-xs text-green-400 truncate" title={sourceAudioFile.name}>
+                            ✓ {sourceAudioFile.name}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                    
+                    {/* Target Audio Upload */}
+                    <div className="space-y-2">
+                      <label className="block text-sm font-medium text-gray-300">
+                        Target Audio (voice style reference)
+                      </label>
+                      <input
+                        type="file"
+                        accept="audio/*"
+                        onChange={(e) => setTargetAudioFile(e.target.files[0])}
+                        className="block w-full text-sm text-gray-300 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 bg-gray-600 rounded-md"
+                      />
+                      {targetAudioFile && (
+                        <div className="px-3 py-1 bg-gray-600 rounded-md">
+                          <p className="text-xs text-green-400 truncate" title={targetAudioFile.name}>
+                            ✓ {targetAudioFile.name}
+                          </p>
+                        </div>
+                      )}
+                    </div>
                   </div>
                   
-                  {/* Target Audio Upload */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-2">
-                      Target Audio (voice style reference)
-                    </label>
-                    <input
-                      type="file"
-                      accept="audio/*"
-                      onChange={(e) => setTargetAudioFile(e.target.files[0])}
-                      className="block w-full text-sm text-gray-300 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 bg-gray-600 rounded-md"
-                    />
-                    {targetAudioFile && (
-                      <p className="text-xs text-green-400 mt-1">Selected: {targetAudioFile.name}</p>
-                    )}
-                  </div>
-                </div>
-                
-                {/* Error Display */}
-                {conversionError && (
-                  <div className="mb-4 p-3 bg-red-600 text-white rounded-md text-sm">
-                    Error: {conversionError}
-                  </div>
-                )}
-                
-                {/* Run Voice Conversion Button */}
-                <div className="flex flex-col items-center">
-                  <button
-                    onClick={runVoiceConversion}
-                    disabled={!sourceAudioFile || !targetAudioFile || isConverting}
-                    className={`py-3 px-6 rounded-lg font-semibold flex items-center ${
-                      !sourceAudioFile || !targetAudioFile || isConverting
-                        ? 'bg-gray-500 text-gray-300 cursor-not-allowed'
-                        : 'bg-purple-600 hover:bg-purple-700 text-white'
-                    }`}
-                  >
-                    {isConverting ? (
-                      <>
-                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                        Converting...
-                      </>
-                    ) : (
-                      <>
-                        <span className="mr-2">🎤</span>
-                        Run Voice Conversion
-                      </>
-                    )}
-                  </button>
+                  {/* Error Display */}
+                  {conversionError && (
+                    <div className="mb-6 p-4 bg-red-600/20 border border-red-600 text-red-300 rounded-lg text-sm">
+                      <span className="font-semibold">Error:</span> {conversionError}
+                    </div>
+                  )}
                   
+                  {/* Run Voice Conversion Button */}
+                  <div className="flex justify-center mb-4">
+                    <button
+                      onClick={runVoiceConversion}
+                      disabled={!sourceAudioFile || !targetAudioFile || isConverting}
+                      className={`py-3 px-8 rounded-lg font-semibold flex items-center transition-all duration-200 ${
+                        !sourceAudioFile || !targetAudioFile || isConverting
+                          ? 'bg-gray-500 text-gray-300 cursor-not-allowed'
+                          : 'bg-purple-600 hover:bg-purple-700 text-white shadow-lg hover:shadow-xl'
+                      }`}
+                    >
+                      {isConverting ? (
+                        <>
+                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                          Converting...
+                        </>
+                      ) : (
+                        <>
+                          <span className="mr-2">🎤</span>
+                          Run Voice Conversion
+                        </>
+                      )}
+                    </button>
+                  </div>
+                    
                   {/* Converted Audio Player */}
                   {convertedAudioUrl && (
-                    <div className="mt-4 w-full">
-                      <h4 className="text-sm font-medium text-green-400 mb-2">Converted Audio:</h4>
-                      <audio controls className="w-full">
+                    <div className="mt-6 w-full">
+                      <h4 className="text-sm font-medium text-green-400 mb-3">Converted Audio:</h4>
+                      <audio controls className="w-full mb-3">
                         <source src={convertedAudioUrl} type="audio/wav" />
                         Your browser does not support the audio element.
                       </audio>
-                      <a
-                        href={convertedAudioUrl}
-                        download="converted_voice.wav"
-                        className="inline-block mt-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm rounded-md"
-                      >
-                        Download Converted Audio
-                      </a>
+                      <div className="flex justify-center">
+                        <a
+                          href={convertedAudioUrl}
+                          download="converted_voice.wav"
+                          className="inline-block px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm rounded-lg transition-colors"
+                        >
+                          Download Converted Audio
+                        </a>
+                      </div>
                     </div>
                   )}
                 </div>
-              </div>
-              
-              {/* Original buttons section */}
-              <div className="flex flex-wrap gap-2 mt-4">
-                {!isRecording ? (
-                  <button
-                    className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded flex items-center"
-                    onClick={startWebSocket}
-                  >
-                    <span className="mr-1">▶️</span> Start Conversation
-                  </button>
-                ) : (
-                  <button
-                    className="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded flex items-center"
-                    onClick={stopRecording}
-                  >
-                    <span className="mr-1">⏹️</span> Stop Conversation
-                  </button>
-                )}
-                {recordingAvailable && (
-                  <button
-                    className="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded flex items-center"
-                    onClick={saveRecording}
-                    title="Download a recording of your voice input only"
-                  >
-                    <span className="mr-1">💬</span> Save Your Voice
-                  </button>
-                )}
-                {modelResponseAvailable && !isRecording && (
-                  <button
-                    className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded flex items-center"
-                    onClick={saveModelResponses}
-                    title="Download a recording of the AI's voice responses only"
-                  >
-                    <span className="mr-1">🤖</span> Save AI Voice
-                  </button>
-                )}
+                
+                {/* Original buttons section */}
+                <div className="flex flex-wrap gap-2 mt-4">
+                  {!isRecording ? (
+                    <button
+                      className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded flex items-center"
+                      onClick={startWebSocket}
+                    >
+                      <span className="mr-1">▶️</span> Start Conversation
+                    </button>
+                  ) : (
+                    <button
+                      className="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded flex items-center"
+                      onClick={stopRecording}
+                    >
+                      <span className="mr-1">⏹️</span> Stop Conversation
+                    </button>
+                  )}
+                  {recordingAvailable && (
+                    <button
+                      className="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded flex items-center"
+                      onClick={saveRecording}
+                      title="Download a recording of your voice input only"
+                    >
+                      <span className="mr-1">💬</span> Save Your Voice
+                    </button>
+                  )}
+                  {modelResponseAvailable && !isRecording && (
+                    <button
+                      className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded flex items-center"
+                      onClick={saveModelResponses}
+                      title="Download a recording of the AI's voice responses only"
+                    >
+                      <span className="mr-1">🤖</span> Save AI Voice
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
+
+            {/* Previous conversations - shown to the right */}
+            {previousConversations.map((conversation, index) => (
+              <PreviousConversationDisplay 
+                key={conversation.id}
+                conversation={conversation}
+                conversationNumber={index + 1}
+              />
+            ))}
           </div>
         </div>
       </div>
     </div>
   );
 }
+
+const PreviousConversationDisplay = ({ conversation, conversationNumber }) => {
+  const allSentences = [...conversation.completedSentences];
+  if (conversation.pendingSentence.trim() !== '') {
+    allSentences.push(conversation.pendingSentence);
+  }
+
+  // Remove empty last sentence if it exists
+  if (allSentences.length > 1 && allSentences[allSentences.length - 1].trim() === '') {
+    allSentences.pop();
+  }
+
+  return (
+    <div className="min-w-[32rem] max-w-2xl">
+      <div className="bg-gray-800 rounded-lg shadow-lg w-full p-6 flex flex-col items-center border-l-4 border-blue-300">
+        <div className="flex w-full mb-2">
+          <h3 className="text-lg font-semibold text-blue-300">
+            Response to Original Voice (Conversation {conversationNumber})
+          </h3>
+        </div>
+        <div className="w-full">
+          <div className="flex flex-col-reverse overflow-y-auto max-h-64 pr-2">
+            {conversation.warmupComplete ? (
+              allSentences.length > 0 ? (
+                allSentences.map((sentence, index) => (
+                  <p key={index} className="text-gray-300 my-2">{sentence}</p>
+                )).reverse()
+              ) : (
+                <p className="text-gray-400 italic">No responses recorded</p>
+              )
+            ) : (
+              <p className="text-gray-400 italic">Conversation was not completed</p>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 const SuggestionSidebar = () => {
   const suggestions = [
