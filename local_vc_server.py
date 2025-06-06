@@ -102,7 +102,9 @@ def voice_conversion():
                 "--diffusion-steps", str(diffusion_steps),
                 "--length-adjust", str(length_adjust),
                 "--inference-cfg-rate", str(inference_cfg_rate),
-                "--fp16", "True"
+                "--fp16", "True",
+                "--checkpoint", "/Users/shreeharshabs/Library/CloudStorage/OneDrive-KTH/First-Year/IS_2025_Demo/VC_backup/DiT_uvit_tat_xlsr_ema.pth",
+                "--config", "configs/presets/config_dit_mel_seed_uvit_xlsr_tiny.yml",
             ]
             
             logger.info(f"Running command: {' '.join(cmd)}")
