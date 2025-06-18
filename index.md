@@ -1,7 +1,7 @@
 ---
 layout: default
-title: "Hear Me Out: Exploring Conversational AI Through Speech-to-Speech Models"
-description: "An interactive evaluation and bias discovery platform for speech-to-speech conversational AI"
+title: "Hear Me Out"
+description: "Interactive evaluation and bias discovery platform for speech-to-speech conversational AI"
 ---
 
 <div align="center">
@@ -69,12 +69,6 @@ git clone https://github.com/shreeharsha-bs/Hear-Me-Out.git
 cd Hear-Me-Out
 ```
 
-If you don't have Git installed, you can:
-
-- **macOS**: Install via Homebrew with `brew install git`, or download from [git-scm.com](https://git-scm.com/)
-- **Windows**: Download from [git-scm.com](https://git-scm.com/)
-- **Linux**: Install via your package manager (e.g., `sudo apt install git`)
-
 ### 2. Set Up Your Development Environment
 
 ## 💻 Developing locally
@@ -132,7 +126,7 @@ It requires non-standard dependencies, which can be installed with:
 ```bash
 python -m venv venv
 source venv/bin/activate
-pip install -r requirements/requirements-dev.txt
+pip install -r requirements/requirements.txt
 ```
 
 With dependencies installed, run the terminal client with:
@@ -141,7 +135,7 @@ With dependencies installed, run the terminal client with:
 python tests/moshi_client.py
 ```
 
-And begin speaking! Be sure to have your microphone and speakers enabled.
+And begin speaking! Be sure to have your microphone and speakers enabled. Don't click on the Start Conversation too often
 
 ### Developing the http server and frontend
 
@@ -150,8 +144,9 @@ The http server at `src/app.py` is a second FastAPI app, for serving the fronten
 A development server can be run with:
 
 ```bash
-modal serve src.app
+modal serve -m src.app
 ```
+This is the easiest way to get the whole thing running at once.
 
 Since `src/app.py` imports the `src/moshi.py` module, this also starts the Moshi websocket server.
 
