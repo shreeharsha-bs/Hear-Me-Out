@@ -139,7 +139,7 @@ If you want to deploy the app look at the instructions on Modal
   </div>
 </div>
 
-## Example 2
+## Example 3:
 
 
 <div align="center">
