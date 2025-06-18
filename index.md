@@ -120,6 +120,16 @@ Note that for frontend changes, the browser cache may need to be cleared.
 If you want to deploy the app look at the instructions on Modal
 
 
+## Example 3: Voice Conversion
+
+<div align="center">
+  <video controls width="100%" style="max-width: 640px;">
+    <source src="{{ '/assets/Demo_June9th.mp4' | relative_url }}" type="video/mp4">
+    Your browser does not support the video tag.
+  </video>
+</div>
+
+
 <div class="bottom-section">
   <div style="max-width: 1400px; margin: 0 auto; padding: 0 2rem;">
     
@@ -139,12 +149,3 @@ If you want to deploy the app look at the instructions on Modal
   </div>
 </div>
 
-## Example 3:
-
-
-<div align="center">
-  <video controls width="100%" style="max-width: 640px;">
-    <source src="{{ '/assets/Demo_June9th.mp4' | relative_url }}" type="video/mp4">
-    Your browser does not support the video tag.
-  </video>
-</div>
