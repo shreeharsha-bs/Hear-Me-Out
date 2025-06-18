@@ -6,6 +6,19 @@ description: "Interactive evaluation and bias discovery platform for speech-to-s
 
 <div align="center">
   <h1>{{ page.title }}</h1>
+  <p style="color: #666; margin: 0.5rem 0;">Interactive evaluation and bias discovery platform for speech-to-speech conversational AI</p>
+  
+  <!-- Authors -->
+  <p style="color: #555; font-size: 1.1rem; margin: 1rem 0;">
+    <strong>Shree Harsha Bokkahalli Satish, Gustav Eje Henter, Éva Székely</strong>
+  </p>
+  
+  <!-- Affiliation with KTH Logo -->
+  <div style="display: flex; align-items: center; justify-content: center; gap: 1rem; margin: 1rem 0;">
+    <img src="{{ '/assets/KTH_Logo.jpg' | relative_url }}" alt="KTH Royal Institute of Technology" style="height: 40px; width: auto;">
+    <p style="color: #666; margin: 0; font-style: italic;">KTH Royal Institute of Technology, Stockholm, Sweden</p>
+  </div>
+  
   <p><strong><a href="https://testing-moshi--hearmeout-web-dev.modal.run/" target="_blank">🎙️ Click here to try Hear Me Out Live</a></strong></p>
 </div>
 

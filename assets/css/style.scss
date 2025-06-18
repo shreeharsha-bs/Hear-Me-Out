@@ -33,8 +33,8 @@ body {
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
   padding: 2rem;
   margin: 2rem auto;
-  max-width: 1200px; /* Increased from default ~800px */
-  width: 90%; /* Use 90% of screen width */
+  max-width: 1400px; /* Increased from 1200px */
+  width: 95%; /* Increased from 90% */
 }
 
 /* Typography */
@@ -139,6 +139,56 @@ video {
   color: #764ba2;
 }
 
+/* Author and affiliation styling */
+.author-section {
+  text-align: center;
+  margin: 2rem 0;
+}
+
+.author-names {
+  color: #555;
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin: 1rem 0;
+}
+
+.affiliation-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  margin: 1rem 0;
+  flex-wrap: wrap;
+}
+
+.kth-logo {
+  height: 45px;
+  width: auto;
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.1));
+}
+
+.affiliation-text {
+  color: #666;
+  font-style: italic;
+  margin: 0;
+  font-size: 1rem;
+}
+
+@media (max-width: 768px) {
+  .affiliation-container {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  
+  .kth-logo {
+    height: 35px;
+  }
+  
+  .author-names {
+    font-size: 1rem;
+  }
+}
+
 /* Responsive design */
 @media (max-width: 768px) {
   .wrapper {
@@ -168,8 +218,8 @@ video {
 /* Large screens */
 @media (min-width: 1025px) {
   .wrapper {
-    width: 90%;
-    max-width: 1200px;
+    width: 95%;
+    max-width: 1400px;
   }
 }
 
