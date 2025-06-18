@@ -119,7 +119,6 @@ Note that for frontend changes, the browser cache may need to be cleared.
 
 If you want to deploy the app look at the instructions on Modal
 
-</div>
 
 <div class="bottom-section">
   <div style="max-width: 1400px; margin: 0 auto; padding: 0 2rem;">
