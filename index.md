@@ -1,6 +1,6 @@
 ---
 layout: default
-title: "Hear Me Out"
+title: "Hear Me Out: Interactive evaluation and bias discovery platform for speech-to-speech conversational AI"
 description: "Interactive evaluation and bias discovery platform for speech-to-speech conversational AI"
 ---
 

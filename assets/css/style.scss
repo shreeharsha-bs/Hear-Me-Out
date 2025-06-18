@@ -5,19 +5,19 @@
 
 /* Custom styles for Hear Me Out */
 
-/* Header styling */
+/* Hide the header completely */
 .site-header {
-  background-color: #1a1a2e;
-  border-bottom: 2px solid #16213e;
+  display: none !important;
 }
 
-.site-title {
-  color: #eee !important;
-  font-weight: 700;
+/* Remove any top margins/padding that might create space */
+body {
+  margin: 0;
+  padding: 0;
 }
 
-.site-nav .page-link {
-  color: #eee;
+.page-content {
+  padding-top: 0 !important;
 }
 
 /* Main content styling */
