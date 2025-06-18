@@ -3,10 +3,19 @@
 # Site settings
 title: "Hear Me Out"
 description: "Exploring Conversational AI Through Speech-to-Speech Models"
+author: "Shreeharsha BS"
+url: "https://shreeharsha-bs.github.io"
+baseurl: "/Hear-Me-Out"
 
 # Build settings
 markdown: kramdown
+highlighter: rouge
 theme: minima
+
+# Minima theme settings
+minima:
+  social_links:
+    github: shreeharsha-bs
 
 # Exclude directories and files that shouldn't be processed by Jekyll
 exclude:
@@ -36,18 +45,22 @@ exclude:
   - VOICE_CONVERSION_README.md
   - EVAL.md
 
-# Include the main documentation files
+# Include the main documentation files and assets
 include:
   - README.md
   - LICENSE
+  - assets/
 
 # Plugins
 plugins:
   - jekyll-feed
   - jekyll-sitemap
-
-# Set the base URL (leave empty for GitHub Pages user/organization sites)
-baseurl: ""
+  - jekyll-seo-tag
 
 # GitHub Pages specific settings
 repository: shreeharsha-bs/Hear-Me-Out
+
+# Enable GitHub flavored markdown
+kramdown:
+  input: GFM
+  syntax_highlighter: rouge

@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="{{ page.lang | default: site.lang | default: "en" }}">
+
+  {%- include head.html -%}
+
+  <body>
+
+    {%- include header.html -%}
+
+    <main class="page-content" aria-label="Content">
+      <div class="wrapper">
+        {{ content }}
+      </div>
+    </main>
+
+    {%- include footer.html -%}
+
+    <!-- Custom JavaScript for video handling -->
+    <script>
+      // Ensure videos are properly loaded
+      document.addEventListener('DOMContentLoaded', function() {
+        const videos = document.querySelectorAll('video');
+        videos.forEach(function(video) {
+          video.addEventListener('loadedmetadata', function() {
+            console.log('Video loaded successfully');
+          });
+          video.addEventListener('error', function(e) {
+            console.error('Video load error:', e);
+            // If video fails to load, show a message
+            const errorMsg = document.createElement('p');
+            errorMsg.innerHTML = '<strong>Video loading failed. Please check if the video file exists in the assets folder.</strong>';
+            errorMsg.style.color = 'red';
+            errorMsg.style.textAlign = 'center';
+            video.parentNode.insertBefore(errorMsg, video.nextSibling);
+          });
+        });
+      });
+    </script>
+
+  </body>
+
+</html>

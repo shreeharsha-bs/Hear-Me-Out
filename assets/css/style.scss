@@ -1,0 +1,179 @@
+---
+---
+
+@import "{{ site.theme }}";
+
+/* Custom styles for Hear Me Out */
+
+/* Header styling */
+.site-header {
+  background-color: #1a1a2e;
+  border-bottom: 2px solid #16213e;
+}
+
+.site-title {
+  color: #eee !important;
+  font-weight: 700;
+}
+
+.site-nav .page-link {
+  color: #eee;
+}
+
+/* Main content styling */
+.page-content {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  min-height: 100vh;
+  padding: 2rem 0;
+}
+
+.wrapper {
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 15px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+  padding: 2rem;
+  margin: 2rem auto;
+}
+
+/* Typography */
+h1, h2, h3 {
+  color: #1a1a2e;
+  margin-top: 2rem;
+  margin-bottom: 1rem;
+}
+
+h1 {
+  background: linear-gradient(45deg, #667eea, #764ba2);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  text-align: center;
+  font-size: 2.5rem;
+  font-weight: 800;
+  margin-bottom: 0.5rem;
+}
+
+/* Links and buttons */
+a {
+  color: #667eea;
+  text-decoration: none;
+  transition: all 0.3s ease;
+}
+
+a:hover {
+  color: #764ba2;
+  text-decoration: underline;
+}
+
+/* Code blocks */
+pre, code {
+  background-color: #f8f9fa;
+  border: 1px solid #e9ecef;
+  border-radius: 8px;
+}
+
+pre {
+  padding: 1rem;
+  overflow-x: auto;
+}
+
+code {
+  padding: 0.2rem 0.4rem;
+  font-size: 87.5%;
+}
+
+/* Images and videos */
+img, video {
+  max-width: 100%;
+  height: auto;
+  border-radius: 10px;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+  margin: 1rem 0;
+}
+
+/* Feature list styling */
+ul li {
+  margin-bottom: 0.5rem;
+  line-height: 1.6;
+}
+
+ul li strong {
+  color: #1a1a2e;
+}
+
+/* Horizontal rules */
+hr {
+  border: none;
+  height: 2px;
+  background: linear-gradient(45deg, #667eea, #764ba2);
+  margin: 2rem 0;
+  border-radius: 2px;
+}
+
+/* Center aligned content */
+div[align="center"] {
+  text-align: center;
+  margin: 2rem 0;
+}
+
+/* Video container */
+video {
+  margin: 2rem auto;
+  display: block;
+}
+
+/* Footer styling */
+.site-footer {
+  background-color: #1a1a2e;
+  color: #eee;
+  border-top: 2px solid #16213e;
+}
+
+.site-footer a {
+  color: #667eea;
+}
+
+.site-footer a:hover {
+  color: #764ba2;
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+  .wrapper {
+    padding: 1rem;
+    margin: 1rem;
+  }
+  
+  h1 {
+    font-size: 2rem;
+  }
+  
+  video {
+    width: 100%;
+  }
+}
+
+/* Special styling for call-to-action buttons */
+a[href*="modal.run"] {
+  display: inline-block;
+  background: linear-gradient(45deg, #667eea, #764ba2);
+  color: white !important;
+  padding: 12px 24px;
+  border-radius: 25px;
+  font-weight: 600;
+  text-decoration: none !important;
+  box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+  transition: all 0.3s ease;
+  margin: 0.5rem;
+}
+
+a[href*="modal.run"]:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+  color: white !important;
+}
+
+/* Emoji spacing */
+.emoji {
+  margin-right: 0.5rem;
+}
