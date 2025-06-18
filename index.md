@@ -14,7 +14,7 @@ description: "Interactive evaluation and bias discovery platform for speech-to-s
 ---
 
 <div align="center">
-  <img src="https://github.com/user-attachments/assets/b282ad4a-354f-4452-ada2-59fafae65629" alt="Hear Me Out Block Diagram" style="max-width: 100%; height: auto;">
+  <img src="https://github.com/user-attachments/assets/b282ad4a-354f-4452-ada2-59fafae65629" alt="Hear Me Out Block Diagram" style="max-width: 65%; height: auto;">
 </div>
 
 ---
@@ -29,7 +29,7 @@ description: "Interactive evaluation and bias discovery platform for speech-to-s
 - **📊 Insights Through Data**: Visualize metrics like speech rate, sentiment analysis, and more.
 
 <div align="center">
-  <img src="https://github.com/user-attachments/assets/42c5cd60-0fe1-4e58-b198-ff12698e3b3a" alt="Hear Me Out Interface Screenshot" style="max-width: 100%; height: auto;">
+  <img src="https://github.com/user-attachments/assets/42c5cd60-0fe1-4e58-b198-ff12698e3b3a" alt="Hear Me Out Interface Screenshot" style="max-width: 65%; height: auto;">
 </div>
 
 Through this immersive experience, we hope users will gain insights into identity, voice, and AI behavior. Ultimately, we aim to surface meaningful questions and inspire future research that promotes fairness and inclusivity with **Hear Me Out**.
