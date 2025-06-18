@@ -24,7 +24,7 @@ body {
 .page-content {
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   min-height: 100vh;
-  padding: 2rem 0;
+  padding: 2rem 0 0 0; /* Remove bottom padding */
 }
 
 .wrapper {
@@ -129,6 +129,16 @@ video {
   background-color: #1a1a2e;
   color: #eee;
   border-top: 2px solid #16213e;
+  width: 100% !important;
+  max-width: none !important;
+  margin: 0 !important;
+  padding: 2rem 0 !important;
+}
+
+.site-footer .wrapper {
+  max-width: 1400px !important;
+  width: 95% !important;
+  margin: 0 auto !important;
 }
 
 .site-footer a {
@@ -137,6 +147,32 @@ video {
 
 .site-footer a:hover {
   color: #764ba2;
+}
+
+/* Bottom content section styling */
+.bottom-section {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 3rem 0;
+  margin: 2rem -2rem -2rem -2rem; /* Extend beyond wrapper padding */
+  border-radius: 0 0 15px 15px;
+  text-align: center;
+}
+
+.bottom-section h2, .bottom-section h3 {
+  color: white !important;
+  text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+}
+
+.bottom-section a {
+  color: #fff !important;
+  text-decoration: underline;
+  font-weight: 600;
+}
+
+.bottom-section a:hover {
+  color: #f0f0f0 !important;
+  text-shadow: 0 2px 4px rgba(0,0,0,0.5);
 }
 
 /* Author and affiliation styling */

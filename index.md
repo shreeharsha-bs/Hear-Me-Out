@@ -119,18 +119,23 @@ Note that for frontend changes, the browser cache may need to be cleared.
 
 If you want to deploy the app look at the instructions on Modal
 
----
+</div>
 
-## 📄 License
+<div class="bottom-section">
+  <div style="max-width: 1400px; margin: 0 auto; padding: 0 2rem;">
+    
+    <h2>📄 License</h2>
+    <p>This project is licensed under the terms specified in the <a href="LICENSE">LICENSE</a> file.</p>
 
-This project is licensed under the terms specified in the [LICENSE](LICENSE) file.
-
-## 🤝 **Collaborations**
-
-We welcome contributions and collaboration. If you're in HCI, please reach out.
----
-
-<div align="center">
-  <p><em>Explore Empathy and Conversational AI with Hear Me Out</em></p>
-  <p><strong><a href="https://testing-moshi--hearmeout-web-dev.modal.run/" target="_blank">🎙️ Try it now</a></strong></p>
+    <h2>🤝 Collaborations</h2>
+    <p>We welcome contributions and collaboration. If you're in HCI, please reach out.</p>
+    
+    <hr style="border: none; height: 1px; background: rgba(255,255,255,0.3); margin: 2rem auto; max-width: 400px;">
+    
+    <p style="font-size: 1.2rem; font-style: italic; margin-bottom: 1rem;">
+      <em>Explore Empathy and Conversational AI with Hear Me Out</em>
+    </p>
+    <p><strong><a href="https://testing-moshi--hearmeout-web-dev.modal.run/" target="_blank" style="background: rgba(255,255,255,0.2); padding: 12px 24px; border-radius: 25px; text-decoration: none !important; display: inline-block; margin-top: 1rem;">🎙️ Try it now</a></strong></p>
+    
+  </div>
 </div>
