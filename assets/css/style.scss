@@ -33,6 +33,8 @@ body {
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
   padding: 2rem;
   margin: 2rem auto;
+  max-width: 1200px; /* Increased from default ~800px */
+  width: 90%; /* Use 90% of screen width */
 }
 
 /* Typography */
@@ -142,6 +144,8 @@ video {
   .wrapper {
     padding: 1rem;
     margin: 1rem;
+    width: calc(100% - 2rem); /* Full width minus margins on mobile */
+    max-width: none;
   }
   
   h1 {
@@ -150,6 +154,22 @@ video {
   
   video {
     width: 100%;
+  }
+}
+
+/* Medium screens - tablets */
+@media (min-width: 769px) and (max-width: 1024px) {
+  .wrapper {
+    width: 85%;
+    max-width: 1000px;
+  }
+}
+
+/* Large screens */
+@media (min-width: 1025px) {
+  .wrapper {
+    width: 90%;
+    max-width: 1200px;
   }
 }
 
