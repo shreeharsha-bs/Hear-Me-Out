@@ -1,4 +1,5 @@
 # Hear Me Out: Exploring Conversational AI Through Speech-to-Speech Models
+You can interact with Hear Me Out at this link: https://testing-moshi--hearmeout-web-dev.modal.run/
 
 **Hear Me Out** is an interactive evaluation and bias discovery platform for speech-to-speech conversational AI. These speech-to-speech models process spoken language directly from audio, without first converting it to text. They promise more natural, expressive, and emotionally aware interactions by retaining prosody, intonation, and other vocal cues throughout the conversation.
 

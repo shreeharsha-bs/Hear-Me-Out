@@ -88,7 +88,7 @@ def voice_conversion():
             logger.info(f"Output dir: {output_dir}")
             
             # Get optional parameters from request
-            diffusion_steps = int(request.form.get('diffusion_steps', 30))
+            diffusion_steps = 15 # int(request.form.get('diffusion_steps', 10))
             length_adjust = float(request.form.get('length_adjust', 1.0))
             inference_cfg_rate = float(request.form.get('inference_cfg_rate', 0.7))
             
