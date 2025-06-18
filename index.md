@@ -98,22 +98,10 @@ The voice conversion functionality uses the seed-VC library. To set this up:
 3. In another terminal, start the Modal server:
 
    ```bash
-   modal serve src.app
+   modal serve -m src.app
    ```
 
-This workflow allows the application to use local voice conversion capabilities while serving the main application through Modal.
-
-### Developing the inference module
-
-The Moshi server is a Modal class module to load the models and maintain streaming state, with a FastAPI http server to expose a websocket interface over the internet.
-
-To run a development server for the Moshi module, run this command from the root of the repo:
-
-```bash
-modal serve -m src.moshi
-```
-
-In the terminal output, you'll find a URL for creating a websocket connection.
+This workflow allows the application to use local voice conversion capabilities (which run on your machine) while serving the main application through Modal.
 
 While the `modal serve` process is running, changes to any of the project files will be automatically applied. Ctrl+C will stop the app.
 
@@ -167,6 +155,6 @@ We welcome contributions! Please feel free to submit issues and pull requests.
 ---
 
 <div align="center">
-  <p><em>Explore the future of conversational AI with Hear Me Out</em></p>
+  <p><em>Explore Empathy and Conversational AI with Hear Me Out</em></p>
   <p><strong><a href="https://testing-moshi--hearmeout-web-dev.modal.run/" target="_blank">🎙️ Try it now</a></strong></p>
 </div>

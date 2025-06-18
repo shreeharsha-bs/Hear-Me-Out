@@ -1,8 +1,8 @@
 # Jekyll configuration for GitHub Pages
 
 # Site settings
-title: "Hear Me Out"
-description: "Interactive evaluation and bias discovery platform for speech-to-speech conversational AI"
+title: "Hear Me Out: Interactive evaluation and bias discovery platform for speech-to-speech conversational AI"
+description: "KTH Royal Institute of Technology, Stockholm, Sweden"
 author: "Shree Harsha Bokkahalli Satish, Gustav Eje Henter, Éva Székely"
 url: "https://shreeharsha-bs.github.io"
 baseurl: "/Hear-Me-Out"
