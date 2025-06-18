@@ -1,0 +1,53 @@
+# Jekyll configuration for GitHub Pages
+
+# Site settings
+title: "Hear Me Out"
+description: "Exploring Conversational AI Through Speech-to-Speech Models"
+
+# Build settings
+markdown: kramdown
+theme: minima
+
+# Exclude directories and files that shouldn't be processed by Jekyll
+exclude:
+  - checkpoints/
+  - seed-vc/
+  - src/
+  - tests/
+  - tools/
+  - requirements/
+  - recordings/
+  - reconstructed/
+  - local_server_requirements.txt
+  - local_vc_server.py
+  - test_vc_setup.py
+  - start_local_vc_server.sh
+  - "*.py"
+  - __pycache__/
+  - "*.pyc"
+  - .git/
+  - .gitignore
+  - .gitmodules
+  - node_modules/
+  - vendor/
+  - Gemfile
+  - Gemfile.lock
+  - Modal_serving_moshi.md
+  - VOICE_CONVERSION_README.md
+  - EVAL.md
+
+# Include the main documentation files
+include:
+  - README.md
+  - LICENSE
+
+# Plugins
+plugins:
+  - jekyll-feed
+  - jekyll-sitemap
+
+# Set the base URL (leave empty for GitHub Pages user/organization sites)
+baseurl: ""
+
+# GitHub Pages specific settings
+repository: shreeharsha-bs/Hear-Me-Out
