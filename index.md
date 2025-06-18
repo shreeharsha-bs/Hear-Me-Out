@@ -138,3 +138,13 @@ If you want to deploy the app look at the instructions on Modal
     
   </div>
 </div>
+
+## Example 2
+
+
+<div align="center">
+  <video controls width="100%" style="max-width: 640px;">
+    <source src="{{ '/assets/Demo_June9th.mp4' | relative_url }}" type="video/mp4">
+    Your browser does not support the video tag.
+  </video>
+</div>
