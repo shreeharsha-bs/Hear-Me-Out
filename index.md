@@ -116,12 +116,12 @@ In the demo video, we explore the **Moshi** speech-to-speech model and its respo
 
 Notice how the model disambiguates between inputs with levity and frustration, correctly reflecting the speaker's emotional state in its responses. This distinction adds a more human-like quality to the interaction.
 
-### Example 2: Voice Conversion
+### Example 2: Voice Conversion - Gender Bias requesting unauthorized access
 
 By applying voice transformations, we simulate how the model might respond to different speaker characteristics. While the differences in these responses are more subtle and inconsistent under repetition, hearing oneself in another voice opens up new perspectives.
 
 
-## Example 3: Voice Conversion
+### Example 3: Voice Conversion - Gender Bias at Work
 
 <div align="center">
   <video controls width="100%" style="max-width: 640px;">
