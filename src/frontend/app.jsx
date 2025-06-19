@@ -222,6 +222,33 @@ const App = () => {
     };
   }, []);
 
+  // Load default target audio file for voice conversion
+  useEffect(() => {
+    const loadDefaultTargetFile = async () => {
+      try {
+        // Use the local server endpoint to load the default target file
+        const fileName = 'tara__chuckle_Hey_I_know_this_is_a_bit_of_a_weird_request_but_laugh_I_really_need_to_get_into_the_server_room_Can_you_let_me_in_.wav';
+        const defaultTargetPath = `http://127.0.0.1:5001/recordings/${fileName}`;
+        const response = await fetch(defaultTargetPath);
+        
+        if (response.ok) {
+          const blob = await response.blob();
+          // Create a File object from the blob with the original filename
+          const file = new File([blob], fileName, { type: blob.type || 'audio/wav' });
+          setTargetAudioFile(file);
+          console.log('Default target audio file loaded:', fileName);
+        } else {
+          console.warn('Could not load default target audio file - file not found or not accessible');
+        }
+      } catch (error) {
+        console.error('Error loading default target audio file:', error);
+        // Don't show error to user, just log it as it's optional functionality
+      }
+    };
+
+    loadDefaultTargetFile();
+  }, []);
+
   // Function to save the user's voice recording to a WAV file
   const saveRecording = async () => {
     if (recordedChunks.length === 0) {
@@ -578,6 +605,7 @@ const App = () => {
                     <div className="space-y-2">
                       <label className="block text-sm font-medium text-gray-300">
                         Target Audio (voice style reference)
+                        <span className="text-xs text-blue-400 ml-2">(Default file pre-loaded)</span>
                       </label>
                       <input
                         type="file"
@@ -589,6 +617,9 @@ const App = () => {
                         <div className="px-3 py-1 bg-gray-600 rounded-md">
                           <p className="text-xs text-green-400 truncate" title={targetAudioFile.name}>
                             ✓ {targetAudioFile.name}
+                            {targetAudioFile.name.includes('tara__chuckle') && (
+                              <span className="text-blue-400 ml-2">(auto-loaded)</span>
+                            )}
                           </p>
                         </div>
                       )}

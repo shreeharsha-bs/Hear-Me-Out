@@ -13,7 +13,7 @@ import shutil
 import logging
 from pathlib import Path
 
-from flask import Flask, request, jsonify, send_file
+from flask import Flask, request, jsonify, send_file, send_from_directory
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
 
@@ -28,9 +28,10 @@ CORS(app)  # Enable CORS for all routes
 UPLOAD_FOLDER = tempfile.gettempdir()
 ALLOWED_EXTENSIONS = {'wav', 'mp3', 'flac', 'm4a', 'ogg'}
 
-# Path to the seed-vc directory
+# Path to the seed-vc directory and recordings directory
 SEED_VC_DIR = Path(__file__).parent / "seed-vc"
 INFERENCE_SCRIPT = SEED_VC_DIR / "inference.py"
+RECORDINGS_DIR = Path(__file__).parent / "recordings"
 
 def allowed_file(filename):
     """Check if file has allowed extension"""
@@ -185,6 +186,34 @@ def conversion_status():
         "seed_vc_dir": str(SEED_VC_DIR),
         "supported_formats": list(ALLOWED_EXTENSIONS)
     })
+
+@app.route('/recordings/<path:filename>', methods=['GET'])
+def serve_recording(filename):
+    """Serve audio files from the recordings directory"""
+    try:
+        if not RECORDINGS_DIR.exists():
+            logger.error(f"Recordings directory not found: {RECORDINGS_DIR}")
+            return jsonify({"error": "Recordings directory not found"}), 404
+        
+        # Security check - ensure the filename is safe
+        secure_name = secure_filename(filename)
+        file_path = RECORDINGS_DIR / secure_name
+        
+        if not file_path.exists():
+            logger.error(f"Recording file not found: {file_path}")
+            return jsonify({"error": "Recording file not found"}), 404
+        
+        # Check if it's an allowed audio file
+        if not allowed_file(secure_name):
+            logger.error(f"File type not allowed: {secure_name}")
+            return jsonify({"error": "File type not allowed"}), 400
+        
+        logger.info(f"Serving recording file: {file_path}")
+        return send_from_directory(RECORDINGS_DIR, secure_name)
+        
+    except Exception as e:
+        logger.error(f"Error serving recording file: {e}")
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
     # Check if inference script exists
