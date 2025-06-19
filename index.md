@@ -32,44 +32,6 @@ description: "Interactive evaluation and bias discovery platform for speech-to-s
 
 ---
 
-## **Features**
-
-**Hear Me Out** enables users to experience interactions with conversational models in ways that aren't typically accessible with regular benchmarking systems. Key features include:
-
-- **🎤 Speech-to-Speech Models**: Users can choose from a variety of models that retain vocal cues like prosody and intonation.
-- **🔄 Real-Time Voice Conversion**: Step into someone else's voice – literally – and investigate how conversational AI systems interpret and respond to various speaker identities and expressions.
-- **⚖️ Side-by-Side Comparisons**: Ask a question with your own voice, then re-ask using a transformed voice. Compare the AI's responses to observe differences in tone, phrasing, or behavior.
-- **📊 Insights Through Data**: Visualize metrics like speech rate, sentiment analysis, and more.
-
-<div align="center">
-  <img src="https://github.com/user-attachments/assets/42c5cd60-0fe1-4e58-b198-ff12698e3b3a" alt="Hear Me Out Interface Screenshot" style="max-width: 65%; height: auto;">
-</div>
-
-Through this immersive experience, we hope users will gain insights into identity, voice, and AI behavior. Ultimately, we aim to surface meaningful questions and inspire future research that promotes fairness and inclusivity with **Hear Me Out**.
-
----
-
-## **Demo Video**
-
-In the demo video, we explore the **Moshi** speech-to-speech model and its responses:
-
-<div align="center">
-  <video controls width="100%" style="max-width: 640px;">
-    <source src="{{ '/assets/IS_st_KTH_Hear-Me-Out-4th_draft.mp4' | relative_url }}" type="video/mp4">
-    Your browser does not support the video tag.
-  </video>
-</div>
-
-### Example 1: Emotional Awareness
-
-Notice how the model disambiguates between inputs with levity and frustration, correctly reflecting the speaker's emotional state in its responses. This distinction adds a more human-like quality to the interaction.
-
-### Example 2: Voice Conversion
-
-By applying voice transformations, we simulate how the model might respond to different speaker characteristics. While the differences in these responses are more subtle and inconsistent under repetition, hearing oneself in another voice opens up new perspectives.
-
----
-
 ## 💻 **Developing locally**
 
 ### 1. Clone the Repository
@@ -115,9 +77,48 @@ This workflow allows the application to use local voice conversion capabilities 
 
 While the `modal serve` process is running, changes to any of the project files will be automatically applied. Ctrl+C will stop the app.
 
-Note that for frontend changes, the browser cache may need to be cleared.
+Note that for frontend changes, the browser cache may need to be cleared. Or better yet, use incognito mode for every run.
 
 If you want to deploy the app look at the instructions on Modal
+
+
+---
+
+## **Features**
+
+**Hear Me Out** enables users to experience interactions with conversational models in ways that aren't typically accessible with regular benchmarking systems. Key features include:
+
+- **🎤 Speech-to-Speech Models**: Users can choose from a variety of models that retain vocal cues like prosody and intonation.
+- **🔄 Real-Time Voice Conversion**: Step into someone else's voice – literally – and investigate how conversational AI systems interpret and respond to various speaker identities and expressions.
+- **⚖️ Side-by-Side Comparisons**: Ask a question with your own voice, then re-ask using a transformed voice. Compare the AI's responses to observe differences in tone, phrasing, or behavior.
+- **📊 Insights Through Data**: Visualize metrics like speech rate, sentiment analysis, and more.
+
+<div align="center">
+  <img src="https://github.com/user-attachments/assets/42c5cd60-0fe1-4e58-b198-ff12698e3b3a" alt="Hear Me Out Interface Screenshot" style="max-width: 65%; height: auto;">
+</div>
+
+Through this immersive experience, we hope users will gain insights into identity, voice, and AI behavior. Ultimately, we aim to surface meaningful questions and inspire future research that promotes fairness and inclusivity with **Hear Me Out**.
+
+---
+
+## **Demo Video**
+
+In the demo video, we explore the **Moshi** speech-to-speech model and its responses:
+
+<div align="center">
+  <video controls width="100%" style="max-width: 640px;">
+    <source src="{{ '/assets/IS_st_KTH_Hear-Me-Out-4th_draft.mp4' | relative_url }}" type="video/mp4">
+    Your browser does not support the video tag.
+  </video>
+</div>
+
+### Example 1: Emotional Awareness
+
+Notice how the model disambiguates between inputs with levity and frustration, correctly reflecting the speaker's emotional state in its responses. This distinction adds a more human-like quality to the interaction.
+
+### Example 2: Voice Conversion
+
+By applying voice transformations, we simulate how the model might respond to different speaker characteristics. While the differences in these responses are more subtle and inconsistent under repetition, hearing oneself in another voice opens up new perspectives.
 
 
 ## Example 3: Voice Conversion
