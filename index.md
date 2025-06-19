@@ -32,7 +32,7 @@ description: "Interactive evaluation and bias discovery platform for speech-to-s
 
 ---
 
-## 💻 **Developing locally**
+## 💻 **Developing with Moshi using Modal for GPU hosting**
 
 ### 1. Clone the Repository
 
@@ -79,8 +79,7 @@ While the `modal serve` process is running, changes to any of the project files 
 
 Note that for frontend changes, the browser cache may need to be cleared. Or better yet, use incognito mode for every run.
 
-If you want to deploy the app look at the instructions on Modal
-
+If you want to deploy the app look at the instructions on Modal. You also get 30$ of free credits from them for now. You can deploy completely locally but that would require some changes to the code.
 
 ---
 
