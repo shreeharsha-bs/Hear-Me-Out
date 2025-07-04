@@ -708,7 +708,7 @@ const App = () => {
                       onClick={saveRecording}
                       title="Download a recording of your voice input only"
                     >
-                      <span className="mr-1">💬</span> Save Your Voice
+                      <span className="mr-1">💬</span> Save and Load Your Voice for VC
                     </button>
                   )}
                   {modelResponseAvailable && !isRecording && (
