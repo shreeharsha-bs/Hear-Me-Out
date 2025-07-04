@@ -16,6 +16,7 @@ from pathlib import Path
 from flask import Flask, request, jsonify, send_file, send_from_directory
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
+import torch
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -23,6 +24,10 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
+
+# Silero VAD model
+vad_model, utils = torch.hub.load(repo_or_dir='snakers4/silero-vad', model='silero_vad')
+(get_speech_timestamps, save_audio, read_audio, VADIterator, collect_chunks) = utils
 
 # Configuration
 UPLOAD_FOLDER = tempfile.gettempdir()
@@ -82,9 +87,15 @@ def voice_conversion():
             source_file.save(source_path)
             target_file.save(target_path)
             os.makedirs(output_dir, exist_ok=True)
+
+            # Apply Silero VAD to the source audio
+            vad_processed_source_path = os.path.join(temp_dir, f"vad_{source_filename}")
+            wav = read_audio(source_path, sampling_rate=16000)
+            speech_timestamps = get_speech_timestamps(wav, vad_model, sampling_rate=16000)
+            save_audio(vad_processed_source_path, collect_chunks(speech_timestamps, wav), sampling_rate=16000)
             
             logger.info(f"Processing voice conversion with ID: {conversion_id}")
-            logger.info(f"Source: {source_path}")
+            logger.info(f"Source: {vad_processed_source_path}")
             logger.info(f"Target: {target_path}")
             logger.info(f"Output dir: {output_dir}")
             
@@ -97,7 +108,7 @@ def voice_conversion():
             cmd = [
                 "python",  # Use python command
                 str(INFERENCE_SCRIPT),
-                "--source", source_path,
+                "--source", vad_processed_source_path,
                 "--target", target_path,
                 "--output", output_dir,
                 "--diffusion-steps", str(diffusion_steps),

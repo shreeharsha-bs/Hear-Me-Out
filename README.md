@@ -81,7 +81,7 @@ The voice conversion functionality uses the seed-VC library. To set this up:
 3. In another terminal, start the Modal server:
 
    ```bash
-   modal serve src.app
+   modal serve -m src.app
    ```
 
 This workflow allows the application to use local voice conversion capabilities while serving the main application through Modal.
@@ -135,4 +135,20 @@ Since `src/app.py` imports the `src/moshi.py` module, this also starts the Moshi
 In the terminal output, you'll find a URL that you can visit to use your app. While the `modal serve` process is running, changes to any of the project files will be automatically applied. Ctrl+C will stop the app.
 
 Note that for frontend changes, the browser cache may need to be cleared.
+
+The local server now uses [Silero VAD](https://github.com/snakers4/silero-vad) to pre-process the source audio file before voice conversion. This removes silence and non-speech segments, which improves conversion speed and maybe quality.
+
+### Prerequisites
+
+- Python 3.8+
+- Pip
+
+### Installation
+
+```bash
+# Install dependencies
+pip3 install -r local_server_requirements.txt
+```
+
+This will install Flask, PyTorch, and other necessary packages.
 
