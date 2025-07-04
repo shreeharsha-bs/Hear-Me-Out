@@ -84,7 +84,7 @@ def web():
                 "--source", source_path,
                 "--target", target_path,
                 "--output", output_dir,
-                "--diffusion-steps", "30",
+                "--diffusion-steps", "15",
                 "--length-adjust", "1.0",
                 "--inference-cfg-rate", "0.7"
             ]

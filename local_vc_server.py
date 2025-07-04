@@ -90,7 +90,8 @@ def voice_conversion():
 
             # Apply Silero VAD to the source audio
             vad_processed_source_path = os.path.join(temp_dir, f"vad_{source_filename}")
-            wav = read_audio(source_path, sampling_rate=16000)
+            threshold = 0.25  # Default 0.5, range 0.0-1.0
+            wav = read_audio(source_path, sampling_rate=16000, threshold=threshold)
             speech_timestamps = get_speech_timestamps(wav, vad_model, sampling_rate=16000)
             save_audio(vad_processed_source_path, collect_chunks(speech_timestamps, wav), sampling_rate=16000)
             
