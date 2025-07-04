@@ -270,12 +270,18 @@ const App = () => {
       // Create a WAV file
       const wavBlob = createWavFile(channelData, sampleRate);
       
+      // Create a File object and set it as the source for voice conversion
+      const fileName = `hear-me-out-user-voice-${getTimestamp()}.wav`;
+      const file = new File([wavBlob], fileName, { type: 'audio/wav' });
+      setSourceAudioFile(file);
+      console.log('User recording set as source for voice conversion.');
+
       // Download the WAV file
       const url = URL.createObjectURL(wavBlob);
       const a = document.createElement('a');
       a.style.display = 'none';
       a.href = url;
-      a.download = `hear-me-out-user-voice-${getTimestamp()}.wav`;
+      a.download = fileName;
       document.body.appendChild(a);
       a.click();
       
