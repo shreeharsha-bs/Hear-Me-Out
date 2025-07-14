@@ -5,15 +5,17 @@ from transformers import pipeline
 from sentence_transformers import SentenceTransformer, util
 import torch
 import soundfile as sf
+import matplotlib
+matplotlib.use('Agg')  # Use non-interactive backend for server environments
+from matplotlib.patches import FancyBboxPatch
+import matplotlib.pyplot as plt
+
 try:
     from audiobox_aesthetics.infer import initialize_predictor
     AUDIOBOX_AVAILABLE = True
 except ImportError:
     AUDIOBOX_AVAILABLE = False
     print("Warning: audiobox_aesthetics not available. Aesthetic metrics will use mock values.")
-import matplotlib
-matplotlib.use('Agg')  # Use non-interactive backend for server environments
-import matplotlib.pyplot as plt
 
 # You might need to install the following packages:
 # pip install librosa pyphen transformers torch sentence-transformers soundfile audiobox_aesthetics matplotlib
@@ -58,7 +60,7 @@ def calculate_pitch_stats(audio_path):
     """
     try:
         audio, sr = librosa.load(audio_path, sr=None)
-        f0, voiced_flag, _ = librosa.pyin(audio, fmin=65, fmax=400)
+        f0, voiced_flag, _ = librosa.pyin(audio, sr=sr, fmin=65, fmax=400)
         
         # Get only the F0 values for voiced frames
         voiced_f0 = f0[voiced_flag]
@@ -196,9 +198,162 @@ def analyze_voices(audio_path_a, audio_path_b):
         "aesthetics": aesthetic_metrics
     }
 
+def create_comprehensive_metrics_plot(metrics_data, save_path='metrics_comparison.png'):
+    """
+    Creates a highly stylized, comprehensive metrics visualization for web display.
+    """
+    # Extract data
+    response_a = metrics_data["response_a"]
+    response_b = metrics_data["response_b"]
+    aesthetics_a = metrics_data["aesthetics"]["response_a"]
+    aesthetics_b = metrics_data["aesthetics"]["response_b"]
+    semantic_sim = metrics_data["comparison"]["semantic_similarity"]
+    
+    # Create figure with a light background color and better proportions
+    fig = plt.figure(figsize=(22, 14))
+    fig.patch.set_facecolor('#F9FAFB')
+    
+    # Define modern, web-friendly colors
+    color_a = '#22C55E'  # Green
+    color_b = '#EF4444'  # Red
+    text_color_dark = '#1F2937'
+    text_color_light = '#6B7280'
+    border_color = '#E5E7EB'
+
+    # Create a well-balanced grid layout without title space
+    gs = fig.add_gridspec(3, 5, height_ratios=[2.5, 2.5, 0.8], width_ratios=[1.3, 0.2, 1.8, 0.2, 1.3],
+                         hspace=0.25, wspace=0.15, top=0.95, bottom=0.08, left=0.03, right=0.97)
+        
+    
+    # --- Left & Right Side: Response Metrics with better spacing ---
+    for i, (resp_data, color, full_label) in enumerate([
+        (response_a, color_a, 'Response to Original Speaker'), 
+        (response_b, color_b, 'Response to Voice Converted Speaker')
+    ]):
+        # Use cleaner column positioning (0 for left, 4 for right)
+        ax_resp = fig.add_subplot(gs[0:2, 0 if i == 0 else 4])
+        
+        # Use FancyBboxPatch with better proportions and padding
+        ax_resp.add_patch(FancyBboxPatch((0.08, 0.08), 0.84, 0.84,
+                                         boxstyle="round,pad=0.04,rounding_size=0.06",
+                                         facecolor=color, alpha=0.08, 
+                                         edgecolor=color, linewidth=2.5,
+                                         transform=ax_resp.transAxes))
+        
+        # Better positioned title with word wrapping consideration
+        title_lines = full_label.split(' to ')
+        title_text = f"{title_lines[0]}\nto {title_lines[1]}"
+        ax_resp.text(0.5, 0.85, title_text, fontsize=16, fontweight='bold', 
+                    ha='center', va='center', transform=ax_resp.transAxes, 
+                    color=text_color_dark, linespacing=1.2)
+        
+        # More spaced out details with better formatting
+        details_text = f"Speech Rate\n{resp_data['speech_rate']:.0f} syl/sec\n\n" \
+                       f"Sentiment\n{resp_data['sentiment']}\n\n" \
+                       f"Mean Pitch\n{resp_data['mean_pitch']:.0f} Hz\n\n" \
+                       f"Pitch Std Dev\n{resp_data['std_pitch']:.0f} Hz"
+
+        ax_resp.text(0.5, 0.45, details_text, fontsize=13, fontweight='normal',
+                      ha='center', va='center', transform=ax_resp.transAxes,
+                      color=text_color_dark, linespacing=1.3)
+        ax_resp.axis('off')
+
+    # --- Center: Radar Chart with optimal positioning and sizing ---
+    ax_radar = fig.add_subplot(gs[0:2, 2], projection='polar')
+    
+    metric_keys = ['production_quality', 'content_enjoyment', 'production_complexity', 'content_usefulness']
+    labels = {
+        "production_quality": "Production\nQuality",
+        "content_enjoyment": "Content\nEnjoyment",
+        "production_complexity": "Production\nComplexity",
+        "content_usefulness": "Content\nUsefulness"
+    }
+    
+    stats_a = [aesthetics_a.get(k, 0) for k in metric_keys]
+    stats_b = [aesthetics_b.get(k, 0) for k in metric_keys]
+    angles = np.linspace(0, 2 * np.pi, len(metric_keys), endpoint=False).tolist()
+    
+    stats_a_closed = stats_a + stats_a[:1]
+    stats_b_closed = stats_b + stats_b[:1]
+    angles_closed = angles + angles[:1]
+
+    ax_radar.set_facecolor(fig.get_facecolor())
+    ax_radar.set_ylim(0, 10)
+
+    # --- Clean grid with better visibility ---
+    ax_radar.grid(False)
+    ax_radar.spines['polar'].set_visible(False)
+    ax_radar.set_yticklabels([])
+    ax_radar.set_xticklabels([])
+
+    # Axis lines
+    for angle in angles:
+        ax_radar.plot([angle, angle], [0, 10], color=border_color, linestyle='-', linewidth=1.8, alpha=0.9)
+
+    # Concentric circles
+    for r in np.arange(2, 11, 2):
+        ax_radar.plot(angles_closed, [r] * len(angles_closed), color=border_color, linewidth=1.5, alpha=0.7)
+        ax_radar.text(np.pi/2, r, str(r), ha='center', va='center', fontsize=10, color=text_color_light,
+                      bbox=dict(boxstyle='round,pad=0.2', fc=fig.get_facecolor(), ec='none', alpha=0.9))
+
+    # --- Plot Data with enhanced visibility ---
+    ax_radar.plot(angles_closed, stats_a_closed, color=color_a, linewidth=4, linestyle='solid', 
+                 label='Response to Original Speaker', zorder=3)
+    ax_radar.fill(angles_closed, stats_a_closed, color=color_a, alpha=0.2, zorder=2)
+    ax_radar.scatter(angles, stats_a, c=color_a, s=140, zorder=4, edgecolors='white', linewidth=3)
+
+    ax_radar.plot(angles_closed, stats_b_closed, color=color_b, linewidth=4, linestyle='solid', 
+                 label='Response to Voice Converted Speaker', zorder=3)
+    ax_radar.fill(angles_closed, stats_b_closed, color=color_b, alpha=0.2, zorder=2)
+    ax_radar.scatter(angles, stats_b, c=color_b, s=140, zorder=4, edgecolors='white', linewidth=3)
+
+    # Better positioned labels with adequate spacing
+    for angle, label_key in zip(angles, metric_keys):
+        ax_radar.text(angle, 11.8, labels[label_key], ha='center', va='center', 
+                     fontsize=13, fontweight='bold', color=text_color_dark, linespacing=1.0)
+
+    # --- Bottom Section: Semantic Similarity & Legend with perfect spacing ---
+    ax_bottom = fig.add_subplot(gs[2, :])
+    ax_bottom.axis('off')
+
+    # Semantic similarity box with better proportions and positioning
+    ax_bottom.add_patch(FancyBboxPatch((0.4, 0.35), 0.2, 0.5,
+                                       boxstyle="round,pad=0.04,rounding_size=0.08",
+                                       facecolor=text_color_dark,
+                                       edgecolor='none', transform=ax_bottom.transAxes,
+                                       clip_on=False, zorder=5))
+    
+    semantic_text = f"Semantic Similarity: {semantic_sim:.2f}"
+    ax_bottom.text(0.5, 0.6, semantic_text, fontsize=14, fontweight='bold',
+                    ha='center', va='center', transform=ax_bottom.transAxes,
+                    color='white', zorder=6)
+
+    # Perfectly spaced legend with clear separation
+    legend_elements = [
+        plt.Line2D([0], [0], marker='o', color='w', label='Response to Original Speaker',
+                   markerfacecolor=color_a, markersize=14),
+        plt.Line2D([0], [0], marker='o', color='w', label='Response to Voice Converted Speaker',
+                   markerfacecolor=color_b, markersize=14)
+    ]
+    legend = ax_bottom.legend(handles=legend_elements, loc='lower center', 
+                             bbox_to_anchor=(0.5, -0.15), ncol=2, fontsize=13,
+                             frameon=False, columnspacing=4, handletextpad=1)
+    
+    # Ensure legend text is properly styled
+    for text in legend.get_texts():
+        text.set_color(text_color_dark)
+        text.set_fontweight('medium')
+    
+    plt.tight_layout(rect=[0, 0.02, 1, 0.98])
+    plt.savefig(save_path, dpi=300, bbox_inches='tight', facecolor=fig.get_facecolor())
+    plt.close()
+    print(f"✨ Prettified comprehensive metrics plot saved to {save_path}")
+
+
 def create_radar_chart(aesthetics_a, aesthetics_b, save_path='metrics_comparison.png'):
     """
     Creates a highly stylized, web-ready radar chart with a diamond grid.
+    This function is kept for backward compatibility.
     """
     metric_keys = ['production_quality', 'content_enjoyment', 'production_complexity', 'content_usefulness']
     
@@ -320,11 +475,14 @@ def create_radar_chart(aesthetics_a, aesthetics_b, save_path='metrics_comparison
 
 if __name__ == '__main__':
 
-    results = analyze_voices('recordings/tara__chuckle_Hey_I_know_this_is_a_bit_of_a_weird_request_but_laugh_I_really_need_to_get_into_the_server_room_Can_you_let_me_in_.wav', 'recordings/tara__chuckle_Hey_I_know_this_is_a_bit_of_a_weird_request_but_laugh_I_really_need_to_get_into_the_server_room_Can_you_let_me_in_.wav')
+    analysis_results = analyze_voices('recordings/tara__chuckle_Hey_I_know_this_is_a_bit_of_a_weird_request_but_laugh_I_really_need_to_get_into_the_server_room_Can_you_let_me_in_.wav', 'recordings/tara__chuckle_Hey_I_know_this_is_a_bit_of_a_weird_request_but_laugh_I_really_need_to_get_into_the_server_room_Can_you_let_me_in_.wav')
     
     import json
-    print(json.dumps(results, indent=2, ensure_ascii=False))
+    print(json.dumps(analysis_results, indent=2, ensure_ascii=False))
 
-    # Create the radar chart
-    if results["aesthetics"]["response_a"] and results["aesthetics"]["response_b"]:
-        create_radar_chart(results["aesthetics"]["response_a"], results["aesthetics"]["response_b"])
+    # Create the comprehensive metrics plot
+    if analysis_results["aesthetics"]["response_a"] and analysis_results["aesthetics"]["response_b"]:
+        create_comprehensive_metrics_plot(analysis_results)
+        
+    # Also create the standalone radar chart for backward compatibility
+    # create_radar_chart(analysis_results["aesthetics"]["response_a"], analysis_results["aesthetics"]["response_b"])
