@@ -257,7 +257,7 @@ def create_radar_chart(aesthetics_a, aesthetics_b, save_path='metrics_comparison
     
     # Plot Response A with shadow effect
     ax.plot(angles_closed, stats_a, color=color_a, linewidth=3, 
-            linestyle='solid', label='Response A', zorder=3)
+            linestyle='solid', label='Response to Original Speaker', zorder=3)
     ax.fill(angles_closed, stats_a, color=color_a, alpha=0.15, zorder=2)
     
     # Add data point markers for Response A
@@ -266,7 +266,7 @@ def create_radar_chart(aesthetics_a, aesthetics_b, save_path='metrics_comparison
 
     # Plot Response B with shadow effect
     ax.plot(angles_closed, stats_b, color=color_b, linewidth=3, 
-            linestyle='solid', label='Response B', zorder=3)
+            linestyle='solid', label='Response to Voice Converted Speaker', zorder=3)
     ax.fill(angles_closed, stats_b, color=color_b, alpha=0.15, zorder=2)
     
     # Add data point markers for Response B

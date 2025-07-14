@@ -116,6 +116,9 @@ const App = () => {
   const [isComparingMetrics, setIsComparingMetrics] = useState(false);
   const [metricsPlotUrl, setMetricsPlotUrl] = useState(null);
   const [metricsError, setMetricsError] = useState(null);
+  const [firstAIRecording, setFirstAIRecording] = useState(null); // First AI voice recording for comparison
+  const [secondAIRecording, setSecondAIRecording] = useState(null); // Second AI voice recording for comparison
+  const [conversationCount, setConversationCount] = useState(0); // Track number of conversations
 
   // Mic Input: start the Opus recorder
   const startRecording = async () => {
@@ -327,12 +330,30 @@ const App = () => {
       if (concatenatedData.length > 0) {
         const wavBlob = createWavFile(concatenatedData, sampleRate);
         
+        // Save for metrics comparison
+        const fileName = `ai-voice-conversation-${conversationCount + 1}-${getTimestamp()}.wav`;
+        const file = new File([wavBlob], fileName, { type: 'audio/wav' });
+        
+        // Store the recording for metrics comparison
+        if (!firstAIRecording) {
+          setFirstAIRecording(file);
+          console.log('First AI recording saved for metrics comparison');
+        } else if (!secondAIRecording) {
+          setSecondAIRecording(file);
+          console.log('Second AI recording saved for metrics comparison');
+        } else {
+          // If both slots are filled, move second to first and save new as second
+          setFirstAIRecording(secondAIRecording);
+          setSecondAIRecording(file);
+          console.log('Updated AI recordings for metrics comparison');
+        }
+        
         // Download the WAV file
         const url = URL.createObjectURL(wavBlob);
         const a = document.createElement('a');
         a.style.display = 'none';
         a.href = url;
-        a.download = `hear-me-out-ai-voice-${getTimestamp()}.wav`;
+        a.download = fileName;
         document.body.appendChild(a);
         a.click();
         
@@ -419,6 +440,9 @@ const App = () => {
       setPendingSentence('');
       setWarmupComplete(false);
     }
+
+    // Increment conversation count
+    setConversationCount(prev => prev + 1);
 
     const endpoint = getBaseURL();
     console.log("Connecting to", endpoint);
@@ -527,8 +551,8 @@ const App = () => {
 
   // Metrics comparison function
   const runMetricsComparison = async () => {
-    if (!sourceAudioFile || !targetAudioFile) {
-      setMetricsError("Please select both source and target audio files");
+    if (!firstAIRecording || !secondAIRecording) {
+      setMetricsError("Please record AI voices from two different conversations first");
       return;
     }
 
@@ -538,8 +562,8 @@ const App = () => {
 
     try {
       const formData = new FormData();
-      formData.append('source_audio', sourceAudioFile);
-      formData.append('target_audio', targetAudioFile);
+      formData.append('source_audio', firstAIRecording);
+      formData.append('target_audio', secondAIRecording);
 
       const response = await fetch('http://127.0.0.1:5001/api/metrics-comparison', {
         method: 'POST',
@@ -732,10 +756,65 @@ const App = () => {
                 
                 {/* Metrics Comparison Section */}
                 <div className="mt-6 p-4 bg-gray-700 rounded-lg">
-                  <h3 className="text-lg font-semibold text-blue-400 mb-4">Audio Metrics Comparison</h3>
+                  <h3 className="text-lg font-semibold text-blue-400 mb-4">AI Voice Metrics Comparison</h3>
                   <p className="text-sm text-gray-300 mb-4">
-                    Compare speech characteristics between the source and target audio files using AI-powered analysis.
+                    Compare AI voice characteristics between different conversations. Record AI voices from two conversations to enable comparison.
                   </p>
+                  
+                  {/* AI Recording Status */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                    <div className="space-y-2">
+                      <label className="block text-sm font-medium text-gray-300">
+                        First AI Recording
+                      </label>
+                      <div className={`p-3 rounded-md border-2 ${
+                        firstAIRecording ? 'border-green-500 bg-green-500/10' : 'border-gray-500 bg-gray-600'
+                      }`}>
+                        {firstAIRecording ? (
+                          <div className="flex items-center">
+                            <span className="text-green-400 mr-2">✓</span>
+                            <span className="text-sm text-green-400 truncate">
+                              {firstAIRecording.name}
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="text-sm text-gray-400">
+                            Record a conversation and save AI voice
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <label className="block text-sm font-medium text-gray-300">
+                        Second AI Recording
+                      </label>
+                      <div className={`p-3 rounded-md border-2 ${
+                        secondAIRecording ? 'border-green-500 bg-green-500/10' : 'border-gray-500 bg-gray-600'
+                      }`}>
+                        {secondAIRecording ? (
+                          <div className="flex items-center">
+                            <span className="text-green-400 mr-2">✓</span>
+                            <span className="text-sm text-green-400 truncate">
+                              {secondAIRecording.name}
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="text-sm text-gray-400">
+                            Start a new conversation and save AI voice
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {/* Instructions */}
+                  {(!firstAIRecording || !secondAIRecording) && (
+                    <div className="mb-6 p-4 bg-blue-600/20 border border-blue-600 text-blue-300 rounded-lg text-sm">
+                      <span className="font-semibold">How to use:</span> Have conversations with the AI and click "Save AI Voice" after each one. 
+                      The system will automatically use these recordings for comparison.
+                    </div>
+                  )}
                   
                   {/* Metrics Error Display */}
                   {metricsError && (
@@ -748,9 +827,9 @@ const App = () => {
                   <div className="flex justify-center mb-4">
                     <button
                       onClick={runMetricsComparison}
-                      disabled={!sourceAudioFile || !targetAudioFile || isComparingMetrics}
+                      disabled={!firstAIRecording || !secondAIRecording || isComparingMetrics}
                       className={`py-3 px-8 rounded-lg font-semibold flex items-center transition-all duration-200 ${
-                        !sourceAudioFile || !targetAudioFile || isComparingMetrics
+                        !firstAIRecording || !secondAIRecording || isComparingMetrics
                           ? 'bg-gray-500 text-gray-300 cursor-not-allowed'
                           : 'bg-green-600 hover:bg-green-700 text-white shadow-lg hover:shadow-xl'
                       }`}
@@ -763,7 +842,7 @@ const App = () => {
                       ) : (
                         <>
                           <span className="mr-2">📊</span>
-                          Compare Metrics
+                          Compare AI Voice Metrics
                         </>
                       )}
                     </button>
@@ -772,18 +851,18 @@ const App = () => {
                   {/* Metrics Plot Display */}
                   {metricsPlotUrl && (
                     <div className="mt-6 w-full">
-                      <h4 className="text-sm font-medium text-green-400 mb-3">Metrics Comparison Chart:</h4>
+                      <h4 className="text-sm font-medium text-green-400 mb-3">AI Voice Metrics Comparison Chart:</h4>
                       <div className="bg-white rounded-lg p-4 mb-3">
                         <img 
                           src={metricsPlotUrl} 
-                          alt="Metrics Comparison Radar Chart" 
+                          alt="AI Voice Metrics Comparison Radar Chart" 
                           className="w-full h-auto max-w-2xl mx-auto"
                         />
                       </div>
                       <div className="flex justify-center">
                         <a
                           href={metricsPlotUrl}
-                          download="metrics_comparison.png"
+                          download="ai_voice_metrics_comparison.png"
                           className="inline-block px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm rounded-lg transition-colors"
                         >
                           Download Chart

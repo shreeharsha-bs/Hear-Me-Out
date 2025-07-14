@@ -19,7 +19,7 @@ description: "Interactive evaluation and bias discovery platform for speech-to-s
     <p style="color: #666; margin: 0; font-style: italic;">KTH Royal Institute of Technology, Stockholm, Sweden</p>
   </div>
   
-  <p><strong><a href="https://testing-moshi--hearmeout-web-dev.modal.run/" target="_blank">🎙️ Click here to try Hear Me Out Live</a></strong></p>
+  <p><strong><a href="https://testing-moshi--hearmeout-web-dev.modal.run/" target="_blank">🎙️ Click here to try Hear Me Out Live (Under construction for now! Reach out for a preview!)</a></strong></p>
 </div>
 
 **Hear Me Out** is an interactive evaluation and bias discovery platform for speech-to-speech conversational AI. Speech-to-speech models process spoken language directly from audio, without first converting it to text. They promise more natural, expressive, and emotionally aware interactions by retaining prosody, intonation, and other vocal cues throughout the conversation.
