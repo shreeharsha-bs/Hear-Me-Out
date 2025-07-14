@@ -190,14 +190,98 @@ def voice_conversion():
         logger.error(f"Unexpected error: {str(e)}")
         return jsonify({"error": f"Unexpected error: {str(e)}"}), 500
 
-@app.route('/api/conversion-status', methods=['GET'])
-def conversion_status():
-    """Get status of conversion capabilities"""
-    return jsonify({
-        "inference_script_exists": INFERENCE_SCRIPT.exists(),
-        "seed_vc_dir": str(SEED_VC_DIR),
-        "supported_formats": list(ALLOWED_EXTENSIONS)
-    })
+@app.route('/api/metrics-comparison', methods=['POST'])
+def metrics_comparison():
+    """
+    Compare metrics between two audio files and return a radar chart plot
+    """
+    try:
+        # Check if the post request has the file parts
+        if 'source_audio' not in request.files or 'target_audio' not in request.files:
+            return jsonify({"error": "Missing source_audio or target_audio files"}), 400
+        
+        source_file = request.files['source_audio']
+        target_file = request.files['target_audio']
+        
+        # Check if files are selected
+        if source_file.filename == '' or target_file.filename == '':
+            return jsonify({"error": "No files selected"}), 400
+        
+        # Check file extensions
+        if not (allowed_file(source_file.filename) and allowed_file(target_file.filename)):
+            return jsonify({"error": "Invalid file format. Supported: wav, mp3, flac, m4a, ogg"}), 400
+        
+        # Create temporary directory for this comparison
+        temp_dir = tempfile.mkdtemp()
+        comparison_id = str(uuid.uuid4())
+        
+        try:
+            # Save uploaded files
+            source_filename = secure_filename(f"source_{comparison_id}.wav")
+            target_filename = secure_filename(f"target_{comparison_id}.wav")
+            
+            source_path = os.path.join(temp_dir, source_filename)
+            target_path = os.path.join(temp_dir, target_filename)
+            plot_path = os.path.join(temp_dir, f"metrics_comparison_{comparison_id}.png")
+            
+            source_file.save(source_path)
+            target_file.save(target_path)
+            
+            logger.info(f"Processing metrics comparison with ID: {comparison_id}")
+            logger.info(f"Source: {source_path}")
+            logger.info(f"Target: {target_path}")
+            logger.info(f"Plot output: {plot_path}")
+            
+            # Import and run the metrics analysis
+            import sys
+            tools_dir = Path(__file__).parent / "tools"
+            sys.path.insert(0, str(tools_dir))
+            
+            try:
+                from metrics import analyze_voices, create_radar_chart
+            except ImportError as e:
+                logger.error(f"Failed to import metrics module: {e}")
+                return jsonify({"error": "Metrics analysis module not available. Please ensure all dependencies are installed."}), 500
+            
+            # Run the analysis
+            results = analyze_voices(source_path, target_path)
+            
+            # Create the radar chart
+            if results["aesthetics"]["response_a"] and results["aesthetics"]["response_b"]:
+                create_radar_chart(
+                    results["aesthetics"]["response_a"], 
+                    results["aesthetics"]["response_b"], 
+                    save_path=plot_path
+                )
+                
+                logger.info(f"Generated metrics comparison plot: {plot_path}")
+                
+                # Return the plot image
+                return send_file(
+                    plot_path,
+                    as_attachment=True,
+                    download_name=f"metrics_comparison_{comparison_id}.png",
+                    mimetype="image/png"
+                )
+            else:
+                return jsonify({"error": "Failed to compute aesthetic metrics for the audio files"}), 500
+                
+        except ImportError as e:
+            logger.error(f"Missing dependencies for metrics analysis: {e}")
+            return jsonify({"error": f"Missing dependencies: {str(e)}. Please install required packages."}), 500
+        except Exception as e:
+            logger.error(f"Error during metrics comparison: {str(e)}")
+            return jsonify({"error": f"Internal error: {str(e)}"}), 500
+        finally:
+            # Schedule cleanup (Flask will handle this after response is sent)
+            try:
+                shutil.rmtree(temp_dir, ignore_errors=True)
+            except:
+                pass
+                
+    except Exception as e:
+        logger.error(f"Unexpected error in metrics comparison: {str(e)}")
+        return jsonify({"error": f"Unexpected error: {str(e)}"}), 500
 
 @app.route('/recordings/<path:filename>', methods=['GET'])
 def serve_recording(filename):

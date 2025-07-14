@@ -112,6 +112,11 @@ const App = () => {
   const [convertedAudioUrl, setConvertedAudioUrl] = useState(null);
   const [conversionError, setConversionError] = useState(null);
 
+  // Metrics comparison state
+  const [isComparingMetrics, setIsComparingMetrics] = useState(false);
+  const [metricsPlotUrl, setMetricsPlotUrl] = useState(null);
+  const [metricsError, setMetricsError] = useState(null);
+
   // Mic Input: start the Opus recorder
   const startRecording = async () => {
     // Reset recorded chunks and model responses for new recording
@@ -520,6 +525,46 @@ const App = () => {
     }
   };
 
+  // Metrics comparison function
+  const runMetricsComparison = async () => {
+    if (!sourceAudioFile || !targetAudioFile) {
+      setMetricsError("Please select both source and target audio files");
+      return;
+    }
+
+    setIsComparingMetrics(true);
+    setMetricsError(null);
+    setMetricsPlotUrl(null);
+
+    try {
+      const formData = new FormData();
+      formData.append('source_audio', sourceAudioFile);
+      formData.append('target_audio', targetAudioFile);
+
+      const response = await fetch('http://127.0.0.1:5001/api/metrics-comparison', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Metrics comparison failed');
+      }
+
+      // Create a blob URL for the plot image
+      const plotBlob = await response.blob();
+      const plotUrl = URL.createObjectURL(plotBlob);
+      setMetricsPlotUrl(plotUrl);
+      
+      console.log("Metrics comparison completed successfully");
+    } catch (error) {
+      console.error("Metrics comparison error:", error);
+      setMetricsError(error.message);
+    } finally {
+      setIsComparingMetrics(false);
+    }
+  };
+
   return (
     <div className="bg-gray-900 text-white min-h-screen flex flex-col">
       <header className="w-full flex items-center p-4 bg-gray-800 fixed top-0 left-0 z-10">
@@ -679,6 +724,69 @@ const App = () => {
                           className="inline-block px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm rounded-lg transition-colors"
                         >
                           Download Converted Audio
+                        </a>
+                      </div>
+                    </div>
+                  )}
+                </div>
+                
+                {/* Metrics Comparison Section */}
+                <div className="mt-6 p-4 bg-gray-700 rounded-lg">
+                  <h3 className="text-lg font-semibold text-blue-400 mb-4">Audio Metrics Comparison</h3>
+                  <p className="text-sm text-gray-300 mb-4">
+                    Compare speech characteristics between the source and target audio files using AI-powered analysis.
+                  </p>
+                  
+                  {/* Metrics Error Display */}
+                  {metricsError && (
+                    <div className="mb-6 p-4 bg-red-600/20 border border-red-600 text-red-300 rounded-lg text-sm">
+                      <span className="font-semibold">Error:</span> {metricsError}
+                    </div>
+                  )}
+                  
+                  {/* Run Metrics Comparison Button */}
+                  <div className="flex justify-center mb-4">
+                    <button
+                      onClick={runMetricsComparison}
+                      disabled={!sourceAudioFile || !targetAudioFile || isComparingMetrics}
+                      className={`py-3 px-8 rounded-lg font-semibold flex items-center transition-all duration-200 ${
+                        !sourceAudioFile || !targetAudioFile || isComparingMetrics
+                          ? 'bg-gray-500 text-gray-300 cursor-not-allowed'
+                          : 'bg-green-600 hover:bg-green-700 text-white shadow-lg hover:shadow-xl'
+                      }`}
+                    >
+                      {isComparingMetrics ? (
+                        <>
+                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                          Analyzing...
+                        </>
+                      ) : (
+                        <>
+                          <span className="mr-2">📊</span>
+                          Compare Metrics
+                        </>
+                      )}
+                    </button>
+                  </div>
+                    
+                  {/* Metrics Plot Display */}
+                  {metricsPlotUrl && (
+                    <div className="mt-6 w-full">
+                      <h4 className="text-sm font-medium text-green-400 mb-3">Metrics Comparison Chart:</h4>
+                      <div className="bg-white rounded-lg p-4 mb-3">
+                        <img 
+                          src={metricsPlotUrl} 
+                          alt="Metrics Comparison Radar Chart" 
+                          className="w-full h-auto max-w-2xl mx-auto"
+                        />
+                      </div>
+                      <div className="flex justify-center">
+                        <a
+                          href={metricsPlotUrl}
+                          download="metrics_comparison.png"
+                          className="inline-block px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm rounded-lg transition-colors"
+                        >
+                          Download Chart
                         </a>
                       </div>
                     </div>

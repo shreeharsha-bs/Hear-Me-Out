@@ -3,3 +3,10 @@ werkzeug
 torch
 torchaudio
 silero-vad
+librosa
+pyphen
+transformers
+sentence-transformers
+soundfile
+matplotlib
+numpy
