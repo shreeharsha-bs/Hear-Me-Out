@@ -462,10 +462,6 @@ def create_radar_chart(aesthetics_a, aesthetics_b, save_path='metrics_comparison
         text.set_color('#374151')
         text.set_fontweight('medium')
 
-    # Add title to top left
-    fig.text(0.02, 0.98, 'Voice Metrics Comparison', fontsize=20, fontweight='bold', 
-             color='#1F2937', ha='left', va='top')
-
     # Save with enhanced settings
     plt.savefig(save_path, dpi=300, bbox_inches='tight', facecolor=fig.get_facecolor(),
                 edgecolor='none', transparent=False)

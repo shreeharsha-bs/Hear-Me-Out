@@ -238,7 +238,7 @@ def metrics_comparison():
             sys.path.insert(0, str(tools_dir))
             
             try:
-                from metrics import analyze_voices, create_radar_chart
+                from metrics import analyze_voices, create_comprehensive_metrics_plot
             except ImportError as e:
                 logger.error(f"Failed to import metrics module: {e}")
                 return jsonify({"error": "Metrics analysis module not available. Please ensure all dependencies are installed."}), 500
@@ -246,11 +246,10 @@ def metrics_comparison():
             # Run the analysis
             results = analyze_voices(source_path, target_path)
             
-            # Create the radar chart
+            # Create the comprehensive metrics plot
             if results["aesthetics"]["response_a"] and results["aesthetics"]["response_b"]:
-                create_radar_chart(
-                    results["aesthetics"]["response_a"], 
-                    results["aesthetics"]["response_b"], 
+                create_comprehensive_metrics_plot(
+                    results, 
                     save_path=plot_path
                 )
                 
