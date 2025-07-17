@@ -6,3 +6,4 @@ src/__pycache__/common.cpython-312.pyc
 checkpoints/models*
 checkpoints/.locks/*
 checkpoints/hf_cache*
+tools/__pycache__/
