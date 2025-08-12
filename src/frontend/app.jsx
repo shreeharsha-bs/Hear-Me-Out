@@ -754,124 +754,6 @@ const App = () => {
                   )}
                 </div>
                 
-                {/* Metrics Comparison Section */}
-                <div className="mt-6 p-4 bg-gray-700 rounded-lg">
-                  <h3 className="text-lg font-semibold text-blue-400 mb-4">AI Voice Metrics Comparison</h3>
-                  <p className="text-sm text-gray-300 mb-4">
-                    Compare AI voice characteristics between different conversations. Record AI voices from two conversations to enable comparison.
-                  </p>
-                  
-                  {/* AI Recording Status */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                    <div className="space-y-2">
-                      <label className="block text-sm font-medium text-gray-300">
-                        First AI Recording
-                      </label>
-                      <div className={`p-3 rounded-md border-2 ${
-                        firstAIRecording ? 'border-green-500 bg-green-500/10' : 'border-gray-500 bg-gray-600'
-                      }`}>
-                        {firstAIRecording ? (
-                          <div className="flex items-center">
-                            <span className="text-green-400 mr-2">✓</span>
-                            <span className="text-sm text-green-400 truncate">
-                              {firstAIRecording.name}
-                            </span>
-                          </div>
-                        ) : (
-                          <span className="text-sm text-gray-400">
-                            Record a conversation and save AI voice
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    
-                    <div className="space-y-2">
-                      <label className="block text-sm font-medium text-gray-300">
-                        Second AI Recording
-                      </label>
-                      <div className={`p-3 rounded-md border-2 ${
-                        secondAIRecording ? 'border-green-500 bg-green-500/10' : 'border-gray-500 bg-gray-600'
-                      }`}>
-                        {secondAIRecording ? (
-                          <div className="flex items-center">
-                            <span className="text-green-400 mr-2">✓</span>
-                            <span className="text-sm text-green-400 truncate">
-                              {secondAIRecording.name}
-                            </span>
-                          </div>
-                        ) : (
-                          <span className="text-sm text-gray-400">
-                            Start a new conversation and save AI voice
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                  
-                  {/* Instructions */}
-                  {(!firstAIRecording || !secondAIRecording) && (
-                    <div className="mb-6 p-4 bg-blue-600/20 border border-blue-600 text-blue-300 rounded-lg text-sm">
-                      <span className="font-semibold">How to use:</span> Have conversations with the AI and click "Save AI Voice" after each one. 
-                      The system will automatically use these recordings for comparison.
-                    </div>
-                  )}
-                  
-                  {/* Metrics Error Display */}
-                  {metricsError && (
-                    <div className="mb-6 p-4 bg-red-600/20 border border-red-600 text-red-300 rounded-lg text-sm">
-                      <span className="font-semibold">Error:</span> {metricsError}
-                    </div>
-                  )}
-                  
-                  {/* Run Metrics Comparison Button */}
-                  <div className="flex justify-center mb-4">
-                    <button
-                      onClick={runMetricsComparison}
-                      disabled={!firstAIRecording || !secondAIRecording || isComparingMetrics}
-                      className={`py-3 px-8 rounded-lg font-semibold flex items-center transition-all duration-200 ${
-                        !firstAIRecording || !secondAIRecording || isComparingMetrics
-                          ? 'bg-gray-500 text-gray-300 cursor-not-allowed'
-                          : 'bg-green-600 hover:bg-green-700 text-white shadow-lg hover:shadow-xl'
-                      }`}
-                    >
-                      {isComparingMetrics ? (
-                        <>
-                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                          Analyzing...
-                        </>
-                      ) : (
-                        <>
-                          <span className="mr-2">📊</span>
-                          Compare AI Voice Metrics
-                        </>
-                      )}
-                    </button>
-                  </div>
-                    
-                  {/* Metrics Plot Display */}
-                  {metricsPlotUrl && (
-                    <div className="mt-6 w-full">
-                      <h4 className="text-sm font-medium text-green-400 mb-3">AI Voice Metrics Comparison Chart:</h4>
-                      <div className="bg-white rounded-lg p-4 mb-3">
-                        <img 
-                          src={metricsPlotUrl} 
-                          alt="AI Voice Metrics Comparison Radar Chart" 
-                          className="w-full h-auto max-w-2xl mx-auto"
-                        />
-                      </div>
-                      <div className="flex justify-center">
-                        <a
-                          href={metricsPlotUrl}
-                          download="ai_voice_metrics_comparison.png"
-                          className="inline-block px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm rounded-lg transition-colors"
-                        >
-                          Download Chart
-                        </a>
-                      </div>
-                    </div>
-                  )}
-                </div>
-                
                 {/* Original buttons section */}
                 <div className="flex flex-wrap gap-2 mt-4">
                   {!isRecording ? (
@@ -908,6 +790,127 @@ const App = () => {
                     </button>
                   )}
                 </div>
+              </div>
+            </div>
+
+            {/* AI Voice Metrics Comparison - Complete section positioned to the right */}
+            <div className="min-w-[32rem] max-w-2xl">
+              <div className="bg-gray-800 rounded-lg shadow-lg w-full p-6 border-l-4 border-green-400">
+                <h3 className="text-lg font-semibold text-green-400 mb-4">🎯 AI Voice Metrics Comparison</h3>
+                <p className="text-sm text-gray-300 mb-4">
+                  Compare AI voice characteristics between different conversations. Record AI voices from two conversations to enable comparison.
+                </p>
+                
+                {/* AI Recording Status */}
+                <div className="grid grid-cols-1 gap-4 mb-6">
+                  <div className="space-y-2">
+                    <label className="block text-sm font-medium text-gray-300">
+                      First AI Recording
+                    </label>
+                    <div className={`p-3 rounded-md border-2 ${
+                      firstAIRecording ? 'border-green-500 bg-green-500/10' : 'border-gray-500 bg-gray-600'
+                    }`}>
+                      {firstAIRecording ? (
+                        <div className="flex items-center">
+                          <span className="text-green-400 mr-2">✓</span>
+                          <span className="text-sm text-green-400 truncate">
+                            {firstAIRecording.name}
+                          </span>
+                        </div>
+                      ) : (
+                        <span className="text-sm text-gray-400">
+                          Record a conversation and save AI voice
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <label className="block text-sm font-medium text-gray-300">
+                      Second AI Recording
+                    </label>
+                    <div className={`p-3 rounded-md border-2 ${
+                      secondAIRecording ? 'border-green-500 bg-green-500/10' : 'border-gray-500 bg-gray-600'
+                    }`}>
+                      {secondAIRecording ? (
+                        <div className="flex items-center">
+                          <span className="text-green-400 mr-2">✓</span>
+                          <span className="text-sm text-green-400 truncate">
+                            {secondAIRecording.name}
+                          </span>
+                        </div>
+                      ) : (
+                        <span className="text-sm text-gray-400">
+                          Start a new conversation and save AI voice
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                
+                {/* Instructions */}
+                {(!firstAIRecording || !secondAIRecording) && (
+                  <div className="mb-6 p-4 bg-blue-600/20 border border-blue-600 text-blue-300 rounded-lg text-sm">
+                    <span className="font-semibold">How to use:</span> Have conversations with the AI and click "Save AI Voice" after each one. 
+                    The system will automatically use these recordings for comparison.
+                  </div>
+                )}
+                
+                {/* Metrics Error Display */}
+                {metricsError && (
+                  <div className="mb-6 p-4 bg-red-600/20 border border-red-600 text-red-300 rounded-lg text-sm">
+                    <span className="font-semibold">Error:</span> {metricsError}
+                  </div>
+                )}
+                
+                {/* Run Metrics Comparison Button */}
+                <div className="flex justify-center mb-6">
+                  <button
+                    onClick={runMetricsComparison}
+                    disabled={!firstAIRecording || !secondAIRecording || isComparingMetrics}
+                    className={`py-3 px-8 rounded-lg font-semibold flex items-center transition-all duration-200 ${
+                      !firstAIRecording || !secondAIRecording || isComparingMetrics
+                        ? 'bg-gray-500 text-gray-300 cursor-not-allowed'
+                        : 'bg-green-600 hover:bg-green-700 text-white shadow-lg hover:shadow-xl'
+                    }`}
+                  >
+                    {isComparingMetrics ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                        Analyzing...
+                      </>
+                    ) : (
+                      <>
+                        <span className="mr-2">📊</span>
+                        Compare AI Voice Metrics
+                      </>
+                    )}
+                  </button>
+                </div>
+                
+                {/* Metrics Plot Display */}
+                {metricsPlotUrl && (
+                  <>
+                    <hr className="border-gray-600 mb-6" />
+                    <h4 className="text-md font-semibold text-green-400 mb-4">📈 Comparison Results</h4>
+                    <div className="bg-white rounded-lg p-4 mb-4">
+                      <img 
+                        src={metricsPlotUrl} 
+                        alt="AI Voice Metrics Comparison Radar Chart" 
+                        className="w-full h-auto max-w-full mx-auto"
+                      />
+                    </div>
+                    <div className="flex justify-center">
+                      <a
+                        href={metricsPlotUrl}
+                        download="ai_voice_metrics_comparison.png"
+                        className="inline-block px-6 py-3 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-lg transition-colors shadow-lg"
+                      >
+                        📊 Download Chart
+                      </a>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
 
