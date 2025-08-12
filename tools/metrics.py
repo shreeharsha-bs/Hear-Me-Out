@@ -101,7 +101,7 @@ def calculate_semantic_similarity(transcript_a, transcript_b):
         embedding_2 = model.encode(transcript_b, convert_to_tensor=True)
         
         # Compute cosine-similarity
-        cosine_scores = util.cos_sim(embedding_1, embedding_2)
+        cosine_scores = np.abs(util.cos_sim(embedding_1, embedding_2))
         return cosine_scores.item()
     except Exception as e:
         print(f"Error calculating semantic similarity: {e}")
@@ -219,6 +219,8 @@ def create_comprehensive_metrics_plot(metrics_data, save_path='metrics_compariso
     text_color_dark = '#1F2937'
     text_color_light = '#6B7280'
     border_color = '#E5E7EB'
+    # Set global font size for all text in this figure
+    plt.rcParams.update({'font.size': 24})
 
     # Create a well-balanced grid layout without title space
     gs = fig.add_gridspec(3, 5, height_ratios=[2.5, 2.5, 0.8], width_ratios=[1.3, 0.2, 1.8, 0.2, 1.3],
@@ -242,18 +244,19 @@ def create_comprehensive_metrics_plot(metrics_data, save_path='metrics_compariso
         
         # Better positioned title with word wrapping consideration
         title_lines = full_label.split(' to ')
-        title_text = f"{title_lines[0]}\nto {title_lines[1]}"
-        ax_resp.text(0.5, 0.85, title_text, fontsize=16, fontweight='bold', 
-                    ha='center', va='center', transform=ax_resp.transAxes, 
+        title_text = f"{title_lines[0]} to \n {title_lines[1]}"
+        if title_lines[1] == "Voice Converted Speaker":
+            title_text = f"{title_lines[0]} to \n Voice Converted \n Speaker"
+        # Lower the y-position and reduce font size to prevent overflow
+        ax_resp.text(0.5, 0.85, title_text, fontsize=32, fontweight='bold',
+                    ha='center', va='center', transform=ax_resp.transAxes,
                     color=text_color_dark, linespacing=1.2)
-        
         # More spaced out details with better formatting
         details_text = f"Speech Rate\n{resp_data['speech_rate']:.0f} syl/sec\n\n" \
                        f"Sentiment\n{resp_data['sentiment']}\n\n" \
                        f"Mean Pitch\n{resp_data['mean_pitch']:.0f} Hz\n\n" \
                        f"Pitch Std Dev\n{resp_data['std_pitch']:.0f} Hz"
-
-        ax_resp.text(0.5, 0.45, details_text, fontsize=13, fontweight='normal',
+        ax_resp.text(0.5, 0.45, details_text, fontsize=26, fontweight='normal',
                       ha='center', va='center', transform=ax_resp.transAxes,
                       color=text_color_dark, linespacing=1.3)
         ax_resp.axis('off')
@@ -310,25 +313,23 @@ def create_comprehensive_metrics_plot(metrics_data, save_path='metrics_compariso
     # Better positioned labels with adequate spacing
     for angle, label_key in zip(angles, metric_keys):
         ax_radar.text(angle, 11.8, labels[label_key], ha='center', va='center', 
-                     fontsize=13, fontweight='bold', color=text_color_dark, linespacing=1.0)
+                     fontsize=28, fontweight='bold', color=text_color_dark, linespacing=1.0)
 
     # --- Bottom Section: Semantic Similarity & Legend with perfect spacing ---
     ax_bottom = fig.add_subplot(gs[2, :])
     ax_bottom.axis('off')
 
-    # Semantic similarity box with better proportions and positioning
-    ax_bottom.add_patch(FancyBboxPatch((0.4, 0.35), 0.2, 0.5,
+    # Semantic similarity box with better proportions and positioning (moved up)
+    ax_bottom.add_patch(FancyBboxPatch((0.36, 0.55), 0.28, 0.5,
                                        boxstyle="round,pad=0.04,rounding_size=0.08",
                                        facecolor=text_color_dark,
                                        edgecolor='none', transform=ax_bottom.transAxes,
                                        clip_on=False, zorder=5))
-    
     semantic_text = f"Semantic Similarity: {semantic_sim:.2f}"
-    ax_bottom.text(0.5, 0.6, semantic_text, fontsize=14, fontweight='bold',
+    ax_bottom.text(0.5, 0.8, semantic_text, fontsize=28, fontweight='bold',
                     ha='center', va='center', transform=ax_bottom.transAxes,
                     color='white', zorder=6)
 
-    # Perfectly spaced legend with clear separation
     legend_elements = [
         plt.Line2D([0], [0], marker='o', color='w', label='Response to Original Speaker',
                    markerfacecolor=color_a, markersize=14),
@@ -336,7 +337,7 @@ def create_comprehensive_metrics_plot(metrics_data, save_path='metrics_compariso
                    markerfacecolor=color_b, markersize=14)
     ]
     legend = ax_bottom.legend(handles=legend_elements, loc='lower center', 
-                             bbox_to_anchor=(0.5, -0.15), ncol=2, fontsize=13,
+                             bbox_to_anchor=(0.5, -0.15), ncol=2, fontsize=24,
                              frameon=False, columnspacing=4, handletextpad=1)
     
     # Ensure legend text is properly styled
@@ -376,6 +377,7 @@ def create_radar_chart(aesthetics_a, aesthetics_b, save_path='metrics_comparison
     angles_closed = angles + angles[:1]
 
     plt.style.use('default')
+    plt.rcParams.update({'font.size': 24})
     fig, ax = plt.subplots(figsize=(12, 12), subplot_kw=dict(polar=True))
     fig.patch.set_facecolor('#FFFFFF')
     ax.set_facecolor('#FFFFFF')
@@ -434,26 +436,26 @@ def create_radar_chart(aesthetics_a, aesthetics_b, save_path='metrics_comparison
         r = i * 2
         if r > 0:  # Skip center label
             ax.text(np.pi / 2, r, str(r), color='#6B7280', ha='center', va='center', 
-                   fontsize=11, alpha=0.9, fontweight='medium',
+                   fontsize=22, alpha=0.9, fontweight='medium',
                    bbox=dict(boxstyle='round,pad=0.3', facecolor='#F9FAFB', alpha=0.9, edgecolor='#E5E7EB'))
 
     # Add metric labels with enhanced styling
     for angle, label_key in zip(angles, metric_keys):
         ax.text(angle, 12, labels[label_key], color='#374151', ha='center', va='center', 
-               fontsize=16, fontweight='bold',
+               fontsize=32, fontweight='bold',
                bbox=dict(boxstyle='round,pad=0.5', facecolor='#F3F4F6', alpha=0.95, edgecolor='#D1D5DB'))
 
     # Add value labels on data points
     for i, (angle, val_a, val_b) in enumerate(zip(angles, stats_a[:-1], stats_b[:-1])):
         if val_a > 0:
             ax.text(angle, val_a + 0.5, f'{val_a:.1f}', color=color_a, ha='center', va='center',
-                   fontsize=10, fontweight='bold')
+                   fontsize=20, fontweight='bold')
         if val_b > 0:
             ax.text(angle, val_b + 0.5, f'{val_b:.1f}', color=color_b, ha='center', va='center',
-                   fontsize=10, fontweight='bold')
+                   fontsize=20, fontweight='bold')
 
     # --- Enhanced Legend ---
-    legend = ax.legend(loc='upper right', bbox_to_anchor=(1.15, 1.15), fontsize=14, frameon=True)
+    legend = ax.legend(loc='upper right', bbox_to_anchor=(1.15, 1.15), fontsize=28, frameon=True)
     legend.get_frame().set_facecolor('#F9FAFB')
     legend.get_frame().set_edgecolor('#D1D5DB')
     legend.get_frame().set_linewidth(1.5)
@@ -471,8 +473,8 @@ def create_radar_chart(aesthetics_a, aesthetics_b, save_path='metrics_comparison
 
 if __name__ == '__main__':
 
-    analysis_results = analyze_voices('recordings/tara__chuckle_Hey_I_know_this_is_a_bit_of_a_weird_request_but_laugh_I_really_need_to_get_into_the_server_room_Can_you_let_me_in_.wav', 'recordings/tara__chuckle_Hey_I_know_this_is_a_bit_of_a_weird_request_but_laugh_I_really_need_to_get_into_the_server_room_Can_you_let_me_in_.wav')
-    
+    analysis_results = analyze_voices('recordings/tara__chuckle_Hey_I_know_this_is_a_bit_of_a_weird_request_but_laugh_I_really_need_to_get_into_the_server_room_Can_you_let_me_in_.wav', 'recordings/Target_2.wav')
+
     import json
     print(json.dumps(analysis_results, indent=2, ensure_ascii=False))
 
