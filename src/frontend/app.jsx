@@ -747,7 +747,7 @@ const App = () => {
                           download="converted_voice.wav"
                           className="inline-block px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm rounded-lg transition-colors"
                         >
-                          Download Converted Audio
+                          Download Converted Audio (Play in a separate music app!)
                         </a>
                       </div>
                     </div>
