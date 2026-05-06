@@ -21,15 +21,16 @@
     <!-- Opus decoder -->
     <script src="https://cdn.jsdelivr.net/npm/ogg-opus-decoder/dist/ogg-opus-decoder.min.js"></script>
       
+    <!-- Moshi WebSocket URL override: set via query param, env, or default to ws://hostname:8000/ws -->
+    <script>
+      window.__MOSHI_WS_URL__ = new URLSearchParams(window.location.search).get('moshi_ws') || null;
+    </script>
     <script>
       tailwind.config = {
         theme: {
           extend: {
             colors: {
-              // Dark base background color
               ground: "#0C0F0B",
-
-              // Theme colors
               primary: "#9AEE86",
               "accent-pink": "#FC9CC6",
               "accent-blue": "#B8E4FF",

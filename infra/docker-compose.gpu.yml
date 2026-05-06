@@ -1,0 +1,12 @@
+services:
+  moshi:
+    build:
+      args:
+        PYTORCH_IMAGE: pytorch/pytorch:2.4.0-cuda12.4-cudnn9-runtime
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]

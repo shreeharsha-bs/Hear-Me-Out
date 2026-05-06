@@ -1,42 +1,61 @@
 """
-Main web application service. Serves the static frontend.
+Main web application service. Serves the static frontend and provides
+voice conversion, metrics comparison, and recording endpoints.
+Standalone FastAPI (no Modal dependency).
 """
+
+import os
+import sys
+import subprocess
+import tempfile
+import uuid
+import shutil
+import logging
 from pathlib import Path
-import modal
-from .moshi import Moshi  # makes modal deploy also deploy moshi
 
-from .common import app
+from fastapi import FastAPI, UploadFile, File, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse, JSONResponse
+import torch
 
-static_path = Path(__file__).with_name("frontend").resolve()
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+STATIC_PATH = Path(__file__).with_name("frontend").resolve()
+SEED_VC_DIR = Path(__file__).parent.parent / "seed-vc"
+INFERENCE_SCRIPT = SEED_VC_DIR / "inference.py"
+RECORDINGS_DIR = Path(__file__).parent.parent / "recordings"
+TOOLS_DIR = Path(__file__).parent.parent / "tools"
+
+ALLOWED_EXTENSIONS = {"wav", "mp3", "flac", "m4a", "ogg"}
+UPLOAD_FOLDER = tempfile.gettempdir()
+
+vad_model = None
+get_speech_timestamps = None
+save_audio = None
+read_audio = None
+collect_chunks = None
 
 
-@app.function(
-    mounts=[modal.Mount.from_local_dir(static_path, remote_path="/assets")],
-    scaledown_window=600,
-    timeout=600,
-    allow_concurrent_inputs=100,
-    image=modal.Image.debian_slim(python_version="3.11").pip_install(
-        "fastapi==0.115.5", "python-multipart"
-    ),
-)
-@modal.asgi_app()
-def web():
-    from fastapi import FastAPI, UploadFile, File, HTTPException
-    from fastapi.middleware.cors import CORSMiddleware
-    from fastapi.staticfiles import StaticFiles
-    from fastapi.responses import FileResponse
-    import subprocess
-    import tempfile
-    import os
-    import uuid
-    import shutil
+def _init_vad():
+    global vad_model, get_speech_timestamps, save_audio, read_audio, collect_chunks
+    if vad_model is None:
+        model, utils = torch.hub.load(
+            repo_or_dir="snakers4/silero-vad", model="silero_vad"
+        )
+        vad_model = model
+        (get_speech_timestamps, save_audio, read_audio, _, collect_chunks) = utils
 
-    # disable caching on static files
-    StaticFiles.is_not_modified = lambda self, *args, **kwargs: False
 
-    web_app = FastAPI()
+def allowed_file(filename):
+    return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
 
-    web_app.add_middleware(
+
+def create_app():
+    app = FastAPI()
+
+    app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
         allow_credentials=True,
@@ -44,78 +63,251 @@ def web():
         allow_headers=["*"],
     )
 
-    # Voice conversion endpoint
-    @web_app.post("/api/voice-conversion")
+    # Disable caching on static files
+    StaticFiles.is_not_modified = lambda self, *args, **kwargs: False
+
+    @app.get("/api/health")
+    async def health_check():
+        return JSONResponse({"status": "healthy", "service": "vc-api"})
+
+    @app.post("/api/voice-conversion")
     async def voice_conversion(
-        source_audio: UploadFile = File(...),
-        target_audio: UploadFile = File(...)
+        source_audio: UploadFile = File(...), target_audio: UploadFile = File(...)
     ):
-        """
-        Run voice conversion using the local inference.py script.
-        This runs on the user's local machine, not on Modal.
-        """
+        _init_vad()
+
+        if not source_audio.filename or not target_audio.filename:
+            raise HTTPException(status_code=400, detail="Missing audio files")
+
+        if not (
+            allowed_file(source_audio.filename) and allowed_file(target_audio.filename)
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid file format. Supported: wav, mp3, flac, m4a, ogg",
+            )
+
+        temp_dir = tempfile.mkdtemp()
+        conversion_id = str(uuid.uuid4())
+
         try:
-            # Create temporary directory for this conversion
-            temp_dir = tempfile.mkdtemp()
-            conversion_id = str(uuid.uuid4())
-            
-            # Save uploaded files
-            source_path = os.path.join(temp_dir, f"source_{conversion_id}.wav")
-            target_path = os.path.join(temp_dir, f"target_{conversion_id}.wav")
+            source_filename = f"source_{conversion_id}.wav"
+            target_filename = f"target_{conversion_id}.wav"
+            source_path = os.path.join(temp_dir, source_filename)
+            target_path = os.path.join(temp_dir, target_filename)
             output_dir = os.path.join(temp_dir, "output")
-            
+
             with open(source_path, "wb") as f:
-                content = await source_audio.read()
-                f.write(content)
-            
+                f.write(await source_audio.read())
             with open(target_path, "wb") as f:
-                content = await target_audio.read()
-                f.write(content)
-            
+                f.write(await target_audio.read())
             os.makedirs(output_dir, exist_ok=True)
-            
-            # Path to the local inference script
-            # This assumes the script is run from the project root
-            script_path = os.path.abspath("../../seed-vc/inference.py")
-            
-            # Run the inference script on local machine
+
+            vad_processed_source_path = os.path.join(temp_dir, f"vad_{source_filename}")
+            threshold = 0.25
+            wav = read_audio(source_path, sampling_rate=16000)
+            speech_timestamps = get_speech_timestamps(
+                wav, vad_model, sampling_rate=16000, threshold=threshold
+            )
+            save_audio(
+                vad_processed_source_path,
+                collect_chunks(speech_timestamps, wav),
+                sampling_rate=16000,
+            )
+
+            logger.info(f"Processing voice conversion with ID: {conversion_id}")
+
+            diffusion_steps = 15
+            length_adjust = 1.0
+            inference_cfg_rate = 0.7
+
+            # Check for volume-mounted checkpoint, fall back to HF download
+            checkpoint_path = os.environ.get("VC_CHECKPOINT_PATH", "")
+            checkpoint_args = []
+            if checkpoint_path and os.path.exists(checkpoint_path):
+                config_path = os.environ.get(
+                    "VC_MODEL_CONFIG",
+                    "configs/presets/config_dit_mel_seed_uvit_xlsr_tiny.yml",
+                )
+                checkpoint_args = [
+                    "--checkpoint",
+                    checkpoint_path,
+                    "--config",
+                    config_path,
+                ]
+
             cmd = [
-                "python", script_path,
-                "--source", source_path,
-                "--target", target_path,
-                "--output", output_dir,
-                "--diffusion-steps", "15",
-                "--length-adjust", "1.0",
-                "--inference-cfg-rate", "0.7"
-            ]
-            
-            # Execute the command
-            result = subprocess.run(cmd, capture_output=True, text=True, cwd="../../seed-vc")
-            
+                sys.executable,
+                str(INFERENCE_SCRIPT),
+                "--source",
+                vad_processed_source_path,
+                "--target",
+                target_path,
+                "--output",
+                output_dir,
+                "--diffusion-steps",
+                str(diffusion_steps),
+                "--length-adjust",
+                str(length_adjust),
+                "--inference-cfg-rate",
+                str(inference_cfg_rate),
+                "--fp16",
+                "True",
+            ] + checkpoint_args
+
+            logger.info(f"Running command: {' '.join(cmd)}")
+
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                cwd=str(SEED_VC_DIR),
+                timeout=300,
+            )
+
+            logger.info(f"Inference stdout: {result.stdout}")
+            if result.stderr:
+                logger.warning(f"Inference stderr: {result.stderr}")
+
             if result.returncode != 0:
-                raise HTTPException(status_code=500, detail=f"Voice conversion failed: {result.stderr}")
-            
-            # Find the output file
-            output_files = [f for f in os.listdir(output_dir) if f.endswith('.wav')]
+                error_msg = f"Voice conversion failed: {result.stderr}"
+                logger.error(error_msg)
+                raise HTTPException(status_code=500, detail=error_msg)
+
+            output_files = [f for f in os.listdir(output_dir) if f.endswith(".wav")]
             if not output_files:
                 raise HTTPException(status_code=500, detail="No output file generated")
-            
-            output_file = os.path.join(output_dir, output_files[0])
-            
-            # Return the converted audio file
+
+            output_file_path = os.path.join(output_dir, output_files[0])
+            logger.info(f"Generated output file: {output_file_path}")
+
             return FileResponse(
-                output_file,
+                output_file_path,
                 media_type="audio/wav",
                 filename=f"converted_{conversion_id}.wav",
-                background=lambda: shutil.rmtree(temp_dir, ignore_errors=True)
             )
-            
-        except Exception as e:
-            # Clean up temp directory on error
-            if 'temp_dir' in locals():
-                shutil.rmtree(temp_dir, ignore_errors=True)
-            raise HTTPException(status_code=500, detail=str(e))
 
-    # Serve static files, for the frontend
-    web_app.mount("/", StaticFiles(directory="/assets", html=True))
-    return web_app
+        except subprocess.TimeoutExpired:
+            raise HTTPException(status_code=408, detail="Voice conversion timed out")
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error during voice conversion: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
+        finally:
+            try:
+                shutil.rmtree(temp_dir, ignore_errors=True)
+            except Exception:
+                pass
+
+    @app.post("/api/metrics-comparison")
+    async def metrics_comparison(
+        source_audio: UploadFile = File(...), target_audio: UploadFile = File(...)
+    ):
+        if not source_audio.filename or not target_audio.filename:
+            raise HTTPException(status_code=400, detail="Missing audio files")
+
+        if not (
+            allowed_file(source_audio.filename) and allowed_file(target_audio.filename)
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid file format. Supported: wav, mp3, flac, m4a, ogg",
+            )
+
+        temp_dir = tempfile.mkdtemp()
+        comparison_id = str(uuid.uuid4())
+
+        try:
+            source_filename = f"source_{comparison_id}.wav"
+            target_filename = f"target_{comparison_id}.wav"
+            source_path = os.path.join(temp_dir, source_filename)
+            target_path = os.path.join(temp_dir, target_filename)
+            plot_path = os.path.join(
+                temp_dir, f"metrics_comparison_{comparison_id}.png"
+            )
+
+            with open(source_path, "wb") as f:
+                f.write(await source_audio.read())
+            with open(target_path, "wb") as f:
+                f.write(await target_audio.read())
+
+            logger.info(f"Processing metrics comparison with ID: {comparison_id}")
+
+            sys.path.insert(0, str(TOOLS_DIR))
+
+            try:
+                from metrics import analyze_voices, create_comprehensive_metrics_plot
+            except ImportError as e:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Metrics analysis module not available: {e}",
+                )
+
+            results = analyze_voices(source_path, target_path)
+
+            if (
+                results["aesthetics"]["response_a"]
+                and results["aesthetics"]["response_b"]
+            ):
+                create_comprehensive_metrics_plot(results, save_path=plot_path)
+                logger.info(f"Generated metrics comparison plot: {plot_path}")
+
+                return FileResponse(
+                    plot_path,
+                    media_type="image/png",
+                    filename=f"metrics_comparison_{comparison_id}.png",
+                )
+            else:
+                raise HTTPException(
+                    status_code=500,
+                    detail="Failed to compute aesthetic metrics for the audio files",
+                )
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error during metrics comparison: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
+        finally:
+            try:
+                shutil.rmtree(temp_dir, ignore_errors=True)
+            except Exception:
+                pass
+
+    @app.get("/recordings/{filename}")
+    async def serve_recording(filename: str):
+        if not RECORDINGS_DIR.exists():
+            raise HTTPException(
+                status_code=404, detail="Recordings directory not found"
+            )
+
+        from werkzeug.utils import secure_filename
+
+        secure_name = secure_filename(filename)
+        file_path = RECORDINGS_DIR / secure_name
+
+        if not file_path.exists():
+            raise HTTPException(status_code=404, detail="Recording file not found")
+
+        if not allowed_file(secure_name):
+            raise HTTPException(status_code=400, detail="File type not allowed")
+
+        logger.info(f"Serving recording file: {file_path}")
+        return FileResponse(file_path, media_type="audio/wav")
+
+    # Serve static frontend files
+    app.mount("/", StaticFiles(directory=str(STATIC_PATH), html=True))
+
+    return app
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run(
+        "src.app:create_app",
+        host="0.0.0.0",
+        port=5001,
+        factory=True,
+    )

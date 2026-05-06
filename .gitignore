@@ -7,3 +7,4 @@ checkpoints/models*
 checkpoints/.locks/*
 checkpoints/hf_cache*
 tools/__pycache__/
+models/

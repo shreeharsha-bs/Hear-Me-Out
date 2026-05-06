@@ -1,0 +1,31 @@
+services:
+  vc-api:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.api
+    ports:
+      - "5001:5001"
+    volumes:
+      - ../models/seed-vc:/app/models/seed-vc:ro
+      - ../models/hf-cache:/app/checkpoints/hf_cache:ro
+    environment:
+      - HF_HUB_CACHE=/app/checkpoints/hf_cache
+      - VC_CHECKPOINT_PATH=/app/models/seed-vc/DiT_uvit_tat_xlsr_ema.pth
+      - VC_MODEL_CONFIG=configs/presets/config_dit_mel_seed_uvit_xlsr_tiny.yml
+
+  moshi:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.moshi
+    ports:
+      - "8000:8000"
+    volumes:
+      - ../models/moshi:/app/models/moshi:ro
+    environment:
+      - MOSHI_MODEL_DIR=/app/models/moshi
+      - HF_HUB_ENABLE_HF_TRANSFER=1
+
+volumes:
+  vc-checkpoints:
+  vc-hf-cache:
+  moshi-cache:

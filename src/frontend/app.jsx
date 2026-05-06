@@ -62,13 +62,16 @@ const writeString = (view, offset, string) => {
   }
 };
 
-const getBaseURL = () => {
-  // use current web app server domain to construct the url for the moshi app
-  const currentURL = new URL(window.location.href);
-  let hostname = currentURL.hostname;
-  hostname = hostname.replace('-web', '-moshi-web');
-  const wsProtocol = currentURL.protocol === 'https:' ? 'wss:' : 'ws:';
-  return `${wsProtocol}//${hostname}/ws`; 
+const getMoshiWsURL = () => {
+  if (window.__MOSHI_WS_URL__) {
+    return window.__MOSHI_WS_URL__;
+  }
+  const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  let hostname = window.location.hostname;
+  if (hostname === '0.0.0.0' || hostname === '127.0.0.1') {
+    hostname = 'localhost';
+  }
+  return `${wsProtocol}//${hostname}:8000/ws`;
 }
 
 const App = () => {
@@ -236,7 +239,7 @@ const App = () => {
       try {
         // Use the local server endpoint to load the default target file
         const fileName = 'tara__chuckle_Hey_I_know_this_is_a_bit_of_a_weird_request_but_laugh_I_really_need_to_get_into_the_server_room_Can_you_let_me_in_.wav';
-        const defaultTargetPath = `http://127.0.0.1:5001/recordings/${fileName}`;
+        const defaultTargetPath = `/recordings/${fileName}`;
         const response = await fetch(defaultTargetPath);
         
         if (response.ok) {
@@ -444,7 +447,7 @@ const App = () => {
     // Increment conversation count
     setConversationCount(prev => prev + 1);
 
-    const endpoint = getBaseURL();
+    const endpoint = getMoshiWsURL();
     console.log("Connecting to", endpoint);
     const socket = new WebSocket(endpoint);
     socketRef.current = socket;
@@ -525,7 +528,7 @@ const App = () => {
       formData.append('length_adjust', '1.0');
       formData.append('inference_cfg_rate', '0.7');
 
-      const response = await fetch('http://127.0.0.1:5001/api/voice-conversion', {
+      const response = await fetch('/api/voice-conversion', {
         method: 'POST',
         body: formData,
       });
@@ -565,7 +568,7 @@ const App = () => {
       formData.append('source_audio', firstAIRecording);
       formData.append('target_audio', secondAIRecording);
 
-      const response = await fetch('http://127.0.0.1:5001/api/metrics-comparison', {
+      const response = await fetch('/api/metrics-comparison', {
         method: 'POST',
         body: formData,
       });

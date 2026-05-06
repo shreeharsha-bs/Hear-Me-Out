@@ -1,0 +1,43 @@
+FROM python:3.11-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg \
+    libsndfile1 \
+    git \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+RUN pip install --no-cache-dir \
+    torch==2.4.0 \
+    torchaudio==2.4.0 \
+    --index-url https://download.pytorch.org/whl/cpu
+
+RUN pip install --no-cache-dir \
+    transformers==4.46.3 \
+    sentence-transformers==3.3.1 \
+    numpy==1.26.4 \
+    scipy==1.13.1 \
+    munch==4.0.0 \
+    einops==0.8.0 \
+    pydub==0.25.1 \
+    accelerate
+
+COPY local_server_requirements.txt /tmp/requirements-local.txt
+RUN pip install --no-cache-dir -r /tmp/requirements-local.txt
+
+RUN pip install --no-cache-dir \
+    fastapi==0.115.5 \
+    uvicorn[standard]==0.32.0 \
+    python-multipart==0.0.18
+
+COPY . .
+
+EXPOSE 5001
+
+ENV HF_HUB_CACHE=/app/checkpoints/hf_cache
+ENV VC_CHECKPOINT_PATH=
+ENV VC_MODEL_CONFIG=configs/presets/config_dit_mel_seed_uvit_xlsr_tiny.yml
+
+CMD ["python", "-m", "uvicorn", "src.app:create_app", "--factory", "--host", "0.0.0.0", "--port", "5001"]
