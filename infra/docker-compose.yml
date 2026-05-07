@@ -3,6 +3,8 @@ services:
     build:
       context: ..
       dockerfile: infra/Dockerfile.api
+    security_opt:
+      - seccomp:unconfined
     ports:
       - "5001:5001"
     volumes:
@@ -17,6 +19,8 @@ services:
     build:
       context: ..
       dockerfile: infra/Dockerfile.moshi
+    security_opt:
+      - seccomp:unconfined
     ports:
       - "8000:8000"
     volumes:
