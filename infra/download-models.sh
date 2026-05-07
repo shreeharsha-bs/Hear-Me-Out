@@ -21,7 +21,7 @@ echo "=== Downloading Moshi models (kyutai/moshika-pytorch-q8) ==="
   -e HF_HUB_CACHE=/cache \
   python:3.11-slim \
   sh -c '
-    pip install --no-cache-dir huggingface_hub 1>&2 && \
+    pip install --no-cache-dir --progress-bar off huggingface_hub 1>&2 && \
     python3 -c "
 import os, shutil
 from huggingface_hub import hf_hub_download
@@ -51,9 +51,9 @@ echo "=== Downloading Seed-VC models ==="
   -e HF_HUB_CACHE=/cache \
   python:3.11-slim \
   sh -c '
-    pip install --no-cache-dir huggingface_hub 1>&2 && \
-    pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu 1>&2 && \
-    pip install --no-cache-dir transformers sentence-transformers 1>&2 && \
+    pip install --no-cache-dir --progress-bar off huggingface_hub 1>&2 && \
+    pip install --no-cache-dir --progress-bar off torch --index-url https://download.pytorch.org/whl/cpu 1>&2 && \
+    pip install --no-cache-dir --progress-bar off transformers sentence-transformers 1>&2 && \
     python3 -c "
 import os, sys, logging
 logging.basicConfig(level=logging.INFO)
