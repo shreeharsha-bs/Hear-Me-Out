@@ -15,7 +15,6 @@ docker network inspect "$NETWORK" >/dev/null 2>&1 || docker network create "$NET
 # Build vc-api (CPU)
 echo "[1/2] Building vc-api..."
 docker build \
-  --security-opt seccomp=unconfined \
   -t hmo-vc-api \
   -f "$SCRIPT_DIR/Dockerfile.api" \
   "$PROJECT_DIR"
@@ -23,7 +22,6 @@ docker build \
 # Build moshi (GPU)
 echo "[2/2] Building moshi (GPU)..."
 docker build \
-  --security-opt seccomp=unconfined \
   --build-arg PYTORCH_IMAGE=pytorch/pytorch:2.4.0-cuda12.4-cudnn9-runtime \
   -t hmo-moshi \
   -f "$SCRIPT_DIR/Dockerfile.moshi" \

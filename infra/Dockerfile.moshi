@@ -1,11 +1,11 @@
 ARG PYTORCH_IMAGE=python:3.11-slim
 FROM ${PYTORCH_IMAGE}
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN sh -c 'echo > /etc/apt/apt.conf.d/docker-clean; apt-get update && apt-get install -y --no-install-recommends \
     libsndfile1 \
     build-essential \
     cmake \
-    curl \
+    curl' \
     && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
 
 ENV PATH="/root/.cargo/bin:${PATH}"
