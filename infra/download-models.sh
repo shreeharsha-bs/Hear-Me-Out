@@ -9,7 +9,7 @@ MODELS_DIR="$(cd "$SCRIPT_DIR/.." && pwd)/models"
 MOSHI_DIR="$MODELS_DIR/moshi"
 SEEDVC_DIR="$MODELS_DIR/seed-vc"
 HF_CACHE_DIR="$MODELS_DIR/hf-cache"
-DOCKER="${DOCKER:-/Applications/Docker.app/Contents/Resources/bin/docker}"
+DOCKER="docker"
 
 mkdir -p "$MOSHI_DIR" "$SEEDVC_DIR" "$HF_CACHE_DIR"
 
