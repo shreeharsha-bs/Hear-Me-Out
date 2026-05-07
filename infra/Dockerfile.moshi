@@ -7,11 +7,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     cmake \
     curl \
     && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable \
-    && rm -rf /var/lib/apt/lists/*
+    && apt-get remove -y build-essential cmake curl && apt-get autoremove -y
 
 ENV PATH="/root/.cargo/bin:${PATH}"
 
-RUN pip install --no-cache-dir \
+RUN python -c "import torch" 2>/dev/null || \
+    pip install --no-cache-dir \
     torch==2.4.0 \
     torchaudio==2.4.0 \
     --index-url https://download.pytorch.org/whl/cpu
@@ -26,8 +27,7 @@ RUN pip install --no-cache-dir \
     uvicorn[standard]==0.32.0 \
     numpy sounddevice aiohttp
 
-# Remove Rust and build tools to reduce image size
-RUN apt-get remove -y build-essential cmake curl && apt-get autoremove -y && rm -rf /root/.rustup /root/.cargo
+RUN rm -rf /root/.rustup /root/.cargo /root/.cache/pip
 
 WORKDIR /app
 
@@ -35,7 +35,6 @@ COPY src/ ./src/
 
 EXPOSE 8000
 
-ENV HF_HUB_CACHE=/app/cache
 ENV HF_HUB_ENABLE_HF_TRANSFER=1
 
 CMD ["python", "-m", "uvicorn", "src.moshi:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]
