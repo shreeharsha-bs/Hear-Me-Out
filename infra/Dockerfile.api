@@ -1,6 +1,7 @@
 FROM python:3.11-slim
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get -o 'APT::Update::Post-Invoke-Success::=true' update \
+    && apt-get install -y --no-install-recommends \
     ffmpeg \
     libsndfile1 \
     git \

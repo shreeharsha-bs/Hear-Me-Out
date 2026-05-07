@@ -1,13 +1,14 @@
 ARG PYTORCH_IMAGE=python:3.11-slim
 FROM ${PYTORCH_IMAGE}
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get -o 'APT::Update::Post-Invoke-Success::=true' update \
+    && apt-get install -y --no-install-recommends \
     libsndfile1 \
     build-essential \
     cmake \
     curl \
     && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable \
-    && apt-get remove -y build-essential cmake curl && apt-get autoremove -y
+    && apt-get -o 'APT::Update::Post-Invoke-Success::=true' remove -y build-essential cmake curl && apt-get -o 'APT::Update::Post-Invoke-Success::=true' autoremove -y
 
 ENV PATH="/root/.cargo/bin:${PATH}"
 
