@@ -21,12 +21,9 @@ echo "=== Downloading Moshi models (kyutai/moshika-pytorch-q8) ==="
   -e HF_HUB_CACHE=/cache \
   python:3.11-slim \
   sh -c '
-    export HF_HUB_ENABLE_HF_XET=0 HF_HUB_ENABLE_HF_TRANSFER=0 && \
-    pip install --no-cache-dir --progress-bar off huggingface_hub 1>&2 && \
+    pip install --no-cache-dir --progress-bar off "huggingface_hub==0.24.7" 1>&2 && \
     python3 -c "
 import os, shutil
-os.environ[\"HF_HUB_ENABLE_HF_XET\"] = \"0\"
-os.environ[\"HF_HUB_ENABLE_HF_TRANSFER\"] = \"0\"
 from huggingface_hub import hf_hub_download
 files = [
     (\"kyutai/moshika-pytorch-q8\", \"model.q8.safetensors\"),
@@ -54,14 +51,11 @@ echo "=== Downloading Seed-VC models ==="
   -e HF_HUB_CACHE=/cache \
   python:3.11-slim \
   sh -c '
-    export HF_HUB_ENABLE_HF_XET=0 HF_HUB_ENABLE_HF_TRANSFER=0 && \
-    pip install --no-cache-dir --progress-bar off huggingface_hub 1>&2 && \
+    pip install --no-cache-dir --progress-bar off "huggingface_hub==0.24.7" 1>&2 && \
     pip install --no-cache-dir --progress-bar off torch --index-url https://download.pytorch.org/whl/cpu 1>&2 && \
     pip install --no-cache-dir --progress-bar off transformers sentence-transformers 1>&2 && \
     python3 -c "
-import os, sys, logging
-os.environ[\"HF_HUB_ENABLE_HF_XET\"] = \"0\"
-os.environ[\"HF_HUB_ENABLE_HF_TRANSFER\"] = \"0\"
+import logging
 logging.basicConfig(level=logging.INFO)
 
 # Download XLSR speech tokenizer
