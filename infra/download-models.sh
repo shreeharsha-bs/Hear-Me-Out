@@ -16,6 +16,7 @@ mkdir -p "$MOSHI_DIR" "$SEEDVC_DIR" "$HF_CACHE_DIR"
 # --- Moshi models ---
 echo "=== Downloading Moshi models (kyutai/moshika-pytorch-q8) ==="
 "$DOCKER" run --rm \
+  --security-opt seccomp=unconfined \
   -v "$MOSHI_DIR:/out" \
   -v "$HF_CACHE_DIR:/cache" \
   -e HF_HUB_CACHE=/cache \
@@ -46,6 +47,7 @@ echo ""
 echo "=== Downloading Seed-VC models ==="
 # Copy download_models.py into temp context and run in container
 "$DOCKER" run --rm \
+  --security-opt seccomp=unconfined \
   -v "$SEEDVC_DIR:/out-checkpoints" \
   -v "$HF_CACHE_DIR:/cache" \
   -e HF_HUB_CACHE=/cache \
