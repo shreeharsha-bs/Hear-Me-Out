@@ -33,7 +33,8 @@ RUN pip install --no-cache-dir \
     "sounddevice==0.5" \
     "sphn>=0.1.4,<0.2" \
     "aiohttp>=3.10.5,<3.11" \
-    "hf_transfer>=0.1.8"
+    "hf_transfer>=0.1.8" \
+    "accelerate>=0.30"
 
 RUN cd /app/moshi && pip install --no-cache-dir -e .
 
@@ -41,4 +42,4 @@ EXPOSE 8000
 
 ENV HF_HUB_ENABLE_HF_TRANSFER=1
 
-CMD ["python3", "-m", "moshi.server", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["python3", "-m", "moshi.server", "--host", "0.0.0.0", "--port", "8000", "--cpu-offload"]
