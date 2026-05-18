@@ -21,9 +21,13 @@
     <!-- Opus decoder -->
     <script src="https://cdn.jsdelivr.net/npm/ogg-opus-decoder/dist/ogg-opus-decoder.min.js"></script>
       
-    <!-- Moshi WebSocket URL override: set via query param, env, or default to ws://hostname:8000/ws -->
+    <!-- PersonaPlex WebSocket URL override: set via query param or default to ws://hostname:8000/api/chat -->
     <script>
-      window.__MOSHI_WS_URL__ = new URLSearchParams(window.location.search).get('moshi_ws') || null;
+      const params = new URLSearchParams(window.location.search);
+      window.__PERSONAPLEX_WS_URL__ = params.get('personaplex_ws') || params.get('moshi_ws') || null;
+      window.__VOICE_PROMPT__ = params.get('voice_prompt') || null;
+      window.__TEXT_PROMPT__ = params.get('text_prompt') || null;
+      window.__SEED__ = params.get('seed') || null;
     </script>
     <script>
       tailwind.config = {

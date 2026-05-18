@@ -62,16 +62,19 @@ const writeString = (view, offset, string) => {
   }
 };
 
-const getMoshiWsURL = () => {
-  if (window.__MOSHI_WS_URL__) {
-    return window.__MOSHI_WS_URL__;
+const getPersonaplexWsURL = () => {
+  if (window.__PERSONAPLEX_WS_URL__) {
+    return window.__PERSONAPLEX_WS_URL__;
   }
   const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   let hostname = window.location.hostname;
   if (hostname === '0.0.0.0' || hostname === '127.0.0.1') {
     hostname = 'localhost';
   }
-  return `${wsProtocol}//${hostname}:8000/ws`;
+  const voicePrompt = window.__VOICE_PROMPT__ || 'NATF2.pt';
+  const textPrompt = window.__TEXT_PROMPT__ || 'You enjoy having a good conversation.';
+  const seed = window.__SEED__ || '42';
+  return `${wsProtocol}//${hostname}:8000/api/chat?voice_prompt=${encodeURIComponent(voicePrompt)}&text_prompt=${encodeURIComponent(textPrompt)}&seed=${seed}`;
 }
 
 const App = () => {
@@ -151,7 +154,10 @@ const App = () => {
           console.log("Socket not open, dropping audio");
           return;
         }
-        await socketRef.current.send(arrayBuffer);
+        const tagged = new Uint8Array(arrayBuffer.byteLength + 1);
+        tagged[0] = 1;
+        tagged.set(new Uint8Array(arrayBuffer), 1);
+        await socketRef.current.send(tagged.buffer);
       }
     };
 
@@ -447,15 +453,13 @@ const App = () => {
     // Increment conversation count
     setConversationCount(prev => prev + 1);
 
-    const endpoint = getMoshiWsURL();
+    const endpoint = getPersonaplexWsURL();
     console.log("Connecting to", endpoint);
     const socket = new WebSocket(endpoint);
     socketRef.current = socket;
 
     socket.onopen = () => {
-      console.log("WebSocket connection opened");
-      startRecording();
-      setWarmupComplete(true);
+      console.log("WebSocket connection opened, waiting for PersonaPlex handshake...");
     };
 
     socket.onmessage = async (event) => {
@@ -464,6 +468,13 @@ const App = () => {
       const view = new Uint8Array(arrayBuffer);
       const tag = view[0];
       const payload = arrayBuffer.slice(1);
+      if (tag === 0) {
+        // PersonaPlex handshake - server is ready, start sending audio
+        console.log("Received PersonaPlex handshake, starting recording");
+        startRecording();
+        setWarmupComplete(true);
+        return;
+      }
       if (tag === 1) {
         // audio data
         const { channelData, samplesDecoded, sampleRate } = await decoderRef.current.decode(new Uint8Array(payload));
@@ -654,6 +665,43 @@ const App = () => {
                   </div>
                 </div>
                 
+                {/* PersonaPlex Prompt Controls */}
+                <div className="mt-6 p-4 bg-gray-700 rounded-lg w-full">
+                  <h3 className="text-sm font-semibold text-blue-400 mb-3">Persona Settings</h3>
+                  <div className="grid grid-cols-1 gap-3">
+                    <div>
+                      <label className="block text-xs text-gray-400 mb-1">Voice Prompt</label>
+                      <select
+                        className="w-full bg-gray-600 text-white text-sm rounded px-3 py-2"
+                        defaultValue={window.__VOICE_PROMPT__ || 'NATF2.pt'}
+                        onChange={(e) => { window.__VOICE_PROMPT__ = e.target.value; }}
+                      >
+                        <option value="NATF0.pt">NATF0 - Natural Female 0</option>
+                        <option value="NATF1.pt">NATF1 - Natural Female 1</option>
+                        <option value="NATF2.pt">NATF2 - Natural Female 2</option>
+                        <option value="NATF3.pt">NATF3 - Natural Female 3</option>
+                        <option value="NATM0.pt">NATM0 - Natural Male 0</option>
+                        <option value="NATM1.pt">NATM1 - Natural Male 1</option>
+                        <option value="NATM2.pt">NATM2 - Natural Male 2</option>
+                        <option value="NATM3.pt">NATM3 - Natural Male 3</option>
+                        <option value="VARF0.pt">VARF0 - Variety Female 0</option>
+                        <option value="VARF1.pt">VARF1 - Variety Female 1</option>
+                        <option value="VARM0.pt">VARM0 - Variety Male 0</option>
+                        <option value="VARM1.pt">VARM1 - Variety Male 1</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-400 mb-1">Text Prompt (Persona)</label>
+                      <textarea
+                        className="w-full bg-gray-600 text-white text-sm rounded px-3 py-2"
+                        rows="2"
+                        defaultValue={window.__TEXT_PROMPT__ || 'You enjoy having a good conversation.'}
+                        onChange={(e) => { window.__TEXT_PROMPT__ = e.target.value; }}
+                      />
+                    </div>
+                  </div>
+                </div>
+
                 {/* Voice Conversion Section */}
                 <div className="mt-6 p-4 bg-gray-700 rounded-lg">
                   <h3 className="text-lg font-semibold text-blue-400 mb-4">Voice Conversion</h3>

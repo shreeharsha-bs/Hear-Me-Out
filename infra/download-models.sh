@@ -6,41 +6,42 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 MODELS_DIR="$(cd "$SCRIPT_DIR/.." && pwd)/models"
-MOSHI_DIR="$MODELS_DIR/moshi"
 SEEDVC_DIR="$MODELS_DIR/seed-vc"
 HF_CACHE_DIR="$MODELS_DIR/hf-cache"
 DOCKER="docker"
 
-mkdir -p "$MOSHI_DIR" "$SEEDVC_DIR" "$HF_CACHE_DIR"
+mkdir -p "$SEEDVC_DIR" "$HF_CACHE_DIR"
 
-# --- Moshi models ---
-echo "=== Downloading Moshi models (kyutai/moshika-pytorch-q8) ==="
-"$DOCKER" run --rm \
-  --security-opt seccomp=unconfined \
-  -v "$MOSHI_DIR:/out" \
-  -v "$HF_CACHE_DIR:/cache" \
-  -e HF_HUB_CACHE=/cache \
-  python:3.11-slim \
-  sh -c '
-    pip install --no-cache-dir "huggingface_hub==0.24.7" 1>&2 && \
-    python3 -c "
-import os, shutil
-from huggingface_hub import hf_hub_download
-files = [
-    (\"kyutai/moshika-pytorch-q8\", \"model.q8.safetensors\"),
-    (\"kyutai/moshika-pytorch-q8\", \"tokenizer-e351c8d8-checkpoint125.safetensors\"),
-    (\"kyutai/moshika-pytorch-q8\", \"tokenizer_spm_32k_3.model\"),
-]
-for repo, fname in files:
-    path = hf_hub_download(repo, fname)
-    dst = f\"/out/{fname}\"
-    if not os.path.exists(dst):
-        shutil.copy2(path, dst)
-    size_gb = os.path.getsize(dst) / 1e9
-    print(f\"  {fname} ({size_gb:.2f} GB)\")
-print(\"  Moshi models done.\")
+# --- PersonaPlex models ---
+echo "=== Downloading PersonaPlex models (nvidia/personaplex-7b-v1) ==="
+PERSONAPLEX_CACHE="$MODELS_DIR/personaplex"
+mkdir -p "$PERSONAPLEX_CACHE"
+
+if [ -z "$HF_TOKEN" ]; then
+  echo "WARNING: HF_TOKEN not set. PersonaPlex model is gated - accept license at:"
+  echo "  https://huggingface.co/nvidia/personaplex-7b-v1"
+  echo "  Then set HF_TOKEN in .env file and rerun."
+else
+  "$DOCKER" run --rm \
+    --security-opt seccomp=unconfined \
+    -v "$PERSONAPLEX_CACHE:/cache" \
+    -e HF_HUB_CACHE=/cache \
+    -e HF_TOKEN="$HF_TOKEN" \
+    python:3.11-slim \
+    sh -c '
+      pip install --no-cache-dir "huggingface_hub>=0.24,<0.25" 1>&2 && \
+      python3 -c "
+from huggingface_hub import hf_hub_download, snapshot_download
+print(\"Downloading PersonaPlex-7B model (this may take a while)...\")
+snapshot_download(\"nvidia/personaplex-7b-v1\")
+print(\"  PersonaPlex model downloaded\")
+print(\"Downloading voice prompts...\")
+hf_hub_download(\"nvidia/personaplex-7b-v1\", \"voices.tgz\")
+print(\"  Voice prompts downloaded\")
 "
-'
+    '
+  echo "  PersonaPlex models done."
+fi
 echo ""
 
 # --- Seed-VC models ---
@@ -92,6 +93,6 @@ print(\"Seed-VC models done.\")
 
 echo ""
 echo "=== Done. Models saved to: ==="
-echo "  Moshi:    $MOSHI_DIR"
-echo "  Seed-VC:  $SEEDVC_DIR"
-echo "  HF cache: $HF_CACHE_DIR"
+echo "  PersonaPlex: $MODELS_DIR/personaplex"
+echo "  Seed-VC:     $SEEDVC_DIR"
+echo "  HF cache:    $HF_CACHE_DIR"

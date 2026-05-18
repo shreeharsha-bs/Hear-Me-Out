@@ -1,5 +1,4 @@
-modal
-sounddevice
+# Legacy requirements file - actual dependencies are in Dockerfiles (infra/)
+# See infra/Dockerfile.api and infra/Dockerfile.personaplex for real deps
 numpy
 sphn
-aiohttp
