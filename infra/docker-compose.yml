@@ -9,13 +9,6 @@ services:
       - HF_HUB_ENABLE_HF_TRANSFER=1
     env_file:
       - ../.env
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
     volumes:
       - ../models/personaplex:/root/.cache/huggingface:rw
 
