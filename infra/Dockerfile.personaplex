@@ -30,7 +30,8 @@ RUN pip install --no-cache-dir \
     "sentencepiece==0.2" \
     "sounddevice==0.5" \
     "sphn>=0.1.4,<0.2" \
-    "aiohttp>=3.10.5,<3.11"
+    "aiohttp>=3.10.5,<3.11" \
+    "hf_transfer>=0.1.8"
 
 RUN cd /app/moshi && pip install --no-cache-dir -e .
 
