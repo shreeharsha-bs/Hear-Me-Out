@@ -31,7 +31,7 @@ RUN pip install --no-cache-dir \
     "sounddevice==0.5" \
     "sphn>=0.1.4,<0.2"
 
-RUN pip install --no-cache-dir /app/moshi/
+RUN cd /app/moshi && pip install --no-cache-dir -e .
 
 EXPOSE 8000
 
