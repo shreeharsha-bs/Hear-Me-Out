@@ -12,6 +12,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-pip \
  && rm -rf /var/lib/apt/lists/*
 
+RUN useradd --create-home appuser
+
 WORKDIR /app
 
 ARG PERSONAPLEX_COMMIT=3428dfd95309a7f3c84fd93259ded0f810d1ff91
@@ -21,9 +23,8 @@ RUN git clone https://github.com/NVIDIA/personaplex.git /tmp/personaplex \
  && mv moshi /app/moshi \
  && rm -rf /tmp/personaplex
 
-ENV PIP_ROOT_USER_ACTION=ignore
-
 RUN pip install --no-cache-dir \
+    torch==2.4.0 torchaudio==2.4.0 \
     --index-url https://download.pytorch.org/whl/cu121 \
  && pip install --no-cache-dir \
     "numpy>=1.26,<2.2" \
@@ -39,8 +40,12 @@ RUN pip install --no-cache-dir \
 
 RUN cd /app/moshi && pip install --no-cache-dir -e .
 
-EXPOSE 8000
+RUN chown -R appuser:appuser /app /home/appuser
+USER appuser
 
 ENV HF_HUB_ENABLE_HF_TRANSFER=1
+ENV HF_HUB_CACHE=/home/appuser/.cache/huggingface
+
+EXPOSE 8000
 
 CMD ["python3", "-m", "moshi.server", "--host", "0.0.0.0", "--port", "8000", "--cpu-offload"]
