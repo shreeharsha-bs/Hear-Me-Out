@@ -12,8 +12,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-pip \
  && rm -rf /var/lib/apt/lists/*
 
-RUN useradd --create-home appuser
-
 WORKDIR /app
 
 ARG PERSONAPLEX_COMMIT=3428dfd95309a7f3c84fd93259ded0f810d1ff91
@@ -40,11 +38,9 @@ RUN pip install --no-cache-dir \
 
 RUN cd /app/moshi && pip install --no-cache-dir -e .
 
-RUN chown -R appuser:appuser /app /home/appuser
-USER appuser
+EXPOSE 8000
 
 ENV HF_HUB_ENABLE_HF_TRANSFER=1
-ENV HF_HUB_CACHE=/home/appuser/.cache/huggingface
 
 EXPOSE 8000
 

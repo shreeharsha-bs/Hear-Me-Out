@@ -17,7 +17,7 @@ services:
               count: 1
               capabilities: [gpu]
     volumes:
-      - ../models/personaplex:/home/appuser/.cache/huggingface:rw
+      - ../models/personaplex:/root/.cache/huggingface:rw
 
   vc-api:
     build:
