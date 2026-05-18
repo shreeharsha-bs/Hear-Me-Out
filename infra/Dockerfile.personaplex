@@ -41,6 +41,7 @@ RUN cd /app/moshi && pip install --no-cache-dir -e .
 EXPOSE 8000
 
 ENV HF_HUB_ENABLE_HF_TRANSFER=1
+ENV PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 EXPOSE 8000
 
