@@ -29,7 +29,8 @@ RUN pip install --no-cache-dir \
     "einops==0.7" \
     "sentencepiece==0.2" \
     "sounddevice==0.5" \
-    "sphn>=0.1.4,<0.2"
+    "sphn>=0.1.4,<0.2" \
+    "aiohttp>=3.10.5,<3.11"
 
 RUN cd /app/moshi && pip install --no-cache-dir -e .
 
