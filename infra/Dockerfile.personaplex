@@ -21,8 +21,9 @@ RUN git clone https://github.com/NVIDIA/personaplex.git /tmp/personaplex \
  && mv moshi /app/moshi \
  && rm -rf /tmp/personaplex
 
+ENV PIP_ROOT_USER_ACTION=ignore
+
 RUN pip install --no-cache-dir \
-    torch==2.4.0 torchaudio==2.4.0 \
     --index-url https://download.pytorch.org/whl/cu121 \
  && pip install --no-cache-dir \
     "numpy>=1.26,<2.2" \
