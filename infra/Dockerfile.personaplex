@@ -2,6 +2,8 @@ ARG BASE_IMAGE=nvcr.io/nvidia/cuda
 ARG BASE_IMAGE_TAG=12.2.0-runtime-ubuntu22.04
 FROM ${BASE_IMAGE}:${BASE_IMAGE_TAG}
 
+RUN rm -f /etc/apt/sources.list.d/*.list /etc/apt/trusted.gpg.d/cuda* && apt-get update 2>/dev/null || true
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     pkg-config \
