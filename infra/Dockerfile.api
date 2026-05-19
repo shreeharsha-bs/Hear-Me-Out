@@ -6,12 +6,12 @@ RUN sh -c 'echo > /etc/apt/apt.conf.d/docker-clean; apt-get update && apt-get in
     git \
     build-essential'
 
-WORKDIR /app
-
 RUN pip install --no-cache-dir \
     torch==2.4.0 \
     torchaudio==2.4.0 \
-    --index-url https://download.pytorch.org/whl/cpu
+    --index-url https://download.pytorch.org/whl/cu121
+
+WORKDIR /app
 
 RUN pip install --no-cache-dir \
     "huggingface-hub>=0.24,<0.25" \

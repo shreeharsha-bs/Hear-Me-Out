@@ -16,6 +16,13 @@ services:
       dockerfile: infra/Dockerfile.api
     ports:
       - "5001:5001"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
     volumes:
       - ../models/seed-vc:/app/models/seed-vc:ro
       - ../models/hf-cache:/app/checkpoints/hf_cache:rw
