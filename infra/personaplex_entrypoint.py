@@ -14,27 +14,7 @@ def _patched_torch_load(*args, **kwargs):
 
 torch.load = _patched_torch_load
 
-from aiohttp import web  # noqa: E402
-
-_original_getitem = web.BaseRequest.__getitem__
-
-
-def _patched_getitem(self, key):
-    try:
-        return _original_getitem(self, key)
-    except KeyError:
-        val = self.query.get(key)
-        if val is not None:
-            return val
-        raise
-
-
-web.BaseRequest.__getitem__ = _patched_getitem
-
-print(
-    "[personaplex_entrypoint] Applied patches: torch.load map_location, aiohttp request fallback",
-    flush=True,
-)
+print("[personaplex_entrypoint] Applied patch: torch.load map_location", flush=True)
 
 from moshi.server import main  # noqa: E402
 
