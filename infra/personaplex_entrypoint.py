@@ -14,17 +14,23 @@ def _patched_torch_load(*args, **kwargs):
 
 torch.load = _patched_torch_load
 
-from moshi.server import ServerState, main  # noqa: E402
+from aiohttp import web  # noqa: E402
+from moshi.server import main  # noqa: E402
 
-_original_handle_chat = ServerState.handle_chat
-
-
-async def _patched_handle_chat(self, request):
-    request._state.setdefault("seed", request.query.get("seed"))
-    return await _original_handle_chat(self, request)
+_original_getitem = web.BaseRequest.__getitem__
 
 
-ServerState.handle_chat = _patched_handle_chat
+def _patched_getitem(self, key):
+    try:
+        return _original_getitem(self, key)
+    except KeyError:
+        val = self.query.get(key)
+        if val is not None:
+            return val
+        raise
+
+
+web.BaseRequest.__getitem__ = _patched_getitem
 
 if __name__ == "__main__":
     main()
