@@ -32,5 +32,10 @@ def _patched_getitem(self, key):
 
 web.BaseRequest.__getitem__ = _patched_getitem
 
+print(
+    "[personaplex_entrypoint] Applied patches: torch.load map_location, aiohttp request['seed'] fallback",
+    flush=True,
+)
+
 if __name__ == "__main__":
     main()
