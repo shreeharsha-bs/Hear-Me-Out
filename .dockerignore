@@ -49,6 +49,7 @@ seed-vc/.git
 
 # Infra directory (don't copy into container)
 infra/
+!infra/personaplex_entrypoint.py
 
 # Pre-downloaded models (bind-mounted at runtime, not in image)
 models/
