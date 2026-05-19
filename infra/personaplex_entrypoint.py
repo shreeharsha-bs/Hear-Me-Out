@@ -14,17 +14,7 @@ def _patched_torch_load(*args, **kwargs):
 
 torch.load = _patched_torch_load
 
-from moshi.server import ServerState, main  # noqa: E402
-
-_original_handle_chat = ServerState.handle_chat
-
-
-async def _patched_handle_chat(self, request):
-    request._state.setdefault("seed", request.query.get("seed"))
-    return await _original_handle_chat(self, request)
-
-
-ServerState.handle_chat = _patched_handle_chat
+from moshi.server import main  # noqa: E402
 
 if __name__ == "__main__":
     main()
