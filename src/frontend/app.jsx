@@ -74,7 +74,7 @@ const getPersonaplexWsURL = () => {
   const voicePrompt = window.__VOICE_PROMPT__ || 'NATF2.pt';
   const textPrompt = window.__TEXT_PROMPT__ || 'You enjoy having a good conversation.';
   const seed = window.__SEED__ || '42';
-  return `${wsProtocol}//${hostname}:8000/api/chat?voice_prompt=${encodeURIComponent(voicePrompt)}&text_prompt=${encodeURIComponent(textPrompt)}&seed=${seed}`;
+  return `${wsProtocol}//${hostname}:8000/api/chat?voice_prompt=${encodeURIComponent(voicePrompt)}&text_prompt=${encodeURIComponent(textPrompt)}`;
 }
 
 const App = () => {
