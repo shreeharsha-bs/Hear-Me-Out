@@ -17,6 +17,7 @@ from fastapi import FastAPI, UploadFile, File, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
+from starlette.background import BackgroundTask
 import torch
 
 logging.basicConfig(level=logging.INFO)
@@ -181,24 +182,24 @@ def create_app():
             output_file_path = os.path.join(output_dir, output_files[0])
             logger.info(f"Generated output file: {output_file_path}")
 
+            cleanup = BackgroundTask(shutil.rmtree, temp_dir, ignore_errors=True)
             return FileResponse(
                 output_file_path,
                 media_type="audio/wav",
                 filename=f"converted_{conversion_id}.wav",
+                background=cleanup,
             )
 
         except subprocess.TimeoutExpired:
+            shutil.rmtree(temp_dir, ignore_errors=True)
             raise HTTPException(status_code=408, detail="Voice conversion timed out")
         except HTTPException:
+            shutil.rmtree(temp_dir, ignore_errors=True)
             raise
         except Exception as e:
             logger.error(f"Error during voice conversion: {str(e)}")
+            shutil.rmtree(temp_dir, ignore_errors=True)
             raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
-        finally:
-            try:
-                shutil.rmtree(temp_dir, ignore_errors=True)
-            except Exception:
-                pass
 
     @app.post("/api/metrics-comparison")
     async def metrics_comparison(
@@ -253,27 +254,27 @@ def create_app():
                 create_comprehensive_metrics_plot(results, save_path=plot_path)
                 logger.info(f"Generated metrics comparison plot: {plot_path}")
 
+                cleanup = BackgroundTask(shutil.rmtree, temp_dir, ignore_errors=True)
                 return FileResponse(
                     plot_path,
                     media_type="image/png",
                     filename=f"metrics_comparison_{comparison_id}.png",
+                    background=cleanup,
                 )
             else:
+                shutil.rmtree(temp_dir, ignore_errors=True)
                 raise HTTPException(
                     status_code=500,
                     detail="Failed to compute aesthetic metrics for the audio files",
                 )
 
         except HTTPException:
+            shutil.rmtree(temp_dir, ignore_errors=True)
             raise
         except Exception as e:
             logger.error(f"Error during metrics comparison: {str(e)}")
+            shutil.rmtree(temp_dir, ignore_errors=True)
             raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
-        finally:
-            try:
-                shutil.rmtree(temp_dir, ignore_errors=True)
-            except Exception:
-                pass
 
     @app.get("/recordings/{filename}")
     async def serve_recording(filename: str):
