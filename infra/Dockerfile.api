@@ -15,7 +15,8 @@ RUN pip install --no-cache-dir \
 
 COPY seed-vc/requirements.txt /tmp/requirements-seedvc.txt
 RUN pip install --no-cache-dir \
-    $(grep -v -E '^(torch|torchvision|torchaudio)' /tmp/requirements-seedvc.txt | sed 's/==.*//' | tr '\n' ' ')
+    $(grep -v -E '^(torch|torchvision|torchaudio|huggingface-hub)' /tmp/requirements-seedvc.txt | sed 's/==.*//' | tr '\n' ' ') \
+ && pip install --no-cache-dir "huggingface-hub>=0.24,<0.25"
 
 COPY local_server_requirements.txt /tmp/requirements-local.txt
 RUN pip install --no-cache-dir -r /tmp/requirements-local.txt
