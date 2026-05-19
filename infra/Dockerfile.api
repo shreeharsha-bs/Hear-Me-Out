@@ -21,7 +21,10 @@ RUN pip install --no-cache-dir \
     munch==4.0.0 \
     einops==0.8.0 \
     pydub==0.25.1 \
-    accelerate
+    accelerate \
+    descript-audio-codec==1.0.0 \
+    soundfile==0.12.1 \
+    librosa==0.10.2
 
 COPY local_server_requirements.txt /tmp/requirements-local.txt
 RUN pip install --no-cache-dir -r /tmp/requirements-local.txt
