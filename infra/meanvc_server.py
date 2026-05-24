@@ -121,12 +121,13 @@ class SharedModels:
         logger.info(f"MeanVC using device: {self.device}")
 
         logger.info("Loading Speaker Verification model (wavlm_large)...")
-        from transformers import WavLMModel, Wav2Vec2FeatureExtractor
-
         sv_ckpt = sv_ckpt_path
         if os.path.exists(sv_ckpt):
-            self.sv_model = torch.jit.load(sv_ckpt, map_location="cpu")
+            from src.runtime.speaker_verification.verification import init_model
+
+            self.sv_model = init_model("wavlm_large", sv_ckpt)
             self.sv_model.eval()
+            logger.info("Speaker verification model loaded")
         else:
             logger.warning(
                 f"Speaker verification model not found at {sv_ckpt}, using fallback"

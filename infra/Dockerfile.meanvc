@@ -12,7 +12,11 @@ WORKDIR /app
 # Clone MeanVC
 RUN git clone https://github.com/ASLP-lab/MeanVC.git /tmp/meanvc \
  && cp -r /tmp/meanvc/src /app/meanvc-src \
+ && cp -r /tmp/meanvc/src/runtime/speaker_verification /app/src/runtime/speaker_verification \
+ && cp /tmp/meanvc/src/runtime/speaker_verification/__init__.py /app/src/__init__.py 2>/dev/null || true \
+ && cp /tmp/meanvc/src/__init__.py /app/src/runtime/__init__.py 2>/dev/null || true \
  && rm -rf /tmp/meanvc
+RUN touch /app/src/__init__.py /app/src/runtime/__init__.py
 
 # MeanVC is designed for CPU inference (JIT models, single-thread)
 RUN pip install --no-cache-dir \
@@ -27,7 +31,8 @@ RUN pip install --no-cache-dir \
     tqdm \
     "transformers>=4.46" \
     aiohttp>=3.10 \
-    pydub==0.25.1
+    pydub==0.25.1 \
+    soundfile>=0.12
 
 # Download HF checkpoints (ASR, VC, Vocoder models)
 RUN pip install --no-cache-dir huggingface-hub>=0.24
