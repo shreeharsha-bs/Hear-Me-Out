@@ -1083,7 +1083,12 @@ const MeanVCTest = () => {
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
 
-      ws.onopen = () => setStatus("Connected - streaming audio");
+      const scheduleTimeRef = { current: 0 };
+
+      ws.onopen = () => {
+        scheduleTimeRef.current = audioCtx.currentTime + 0.1;
+        setStatus("Connected - streaming audio");
+      };
 
       ws.onmessage = async (event) => {
         if (typeof event.data === "string") {
@@ -1091,14 +1096,16 @@ const MeanVCTest = () => {
           if (msg.status === "ready") setStatus("Streaming voice conversion...");
           return;
         }
-        // Play received audio
+        // Play received audio, scheduled sequentially to avoid overlap
         const float32 = new Float32Array(await event.data.arrayBuffer());
         const buffer = audioCtx.createBuffer(1, float32.length, 16000);
         buffer.getChannelData(0).set(float32);
         const outSource = audioCtx.createBufferSource();
         outSource.buffer = buffer;
         outSource.connect(audioCtx.destination);
-        outSource.start();
+        const startTime = Math.max(scheduleTimeRef.current, audioCtx.currentTime);
+        outSource.start(startTime);
+        scheduleTimeRef.current = startTime + buffer.duration;
       };
 
       ws.onerror = () => setStatus("WebSocket error");
