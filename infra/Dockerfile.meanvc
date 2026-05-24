@@ -31,7 +31,8 @@ RUN pip install --no-cache-dir \
     "transformers>=4.46" \
     aiohttp>=3.10 \
     pydub==0.25.1 \
-    soundfile>=0.12
+    soundfile>=0.12 \
+    omegaconf
 
 # Download HF checkpoints (ASR, VC, Vocoder models)
 RUN pip install --no-cache-dir huggingface-hub>=0.24
