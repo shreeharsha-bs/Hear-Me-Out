@@ -1217,7 +1217,6 @@ const MeanVCTest = () => {
         {/* Seed-VC One-Shot Test */}
         <SeedVCTest />
       </div>
-    </div>
   );
 };
 
