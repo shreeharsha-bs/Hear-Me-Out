@@ -450,11 +450,23 @@ async def on_startup(app: web.Application):
 
 
 def main():
+    import ssl
+
     port = int(os.environ.get("MEANVC_PORT", 5002))
     app = create_app()
     app.on_startup.append(on_startup)
-    logger.info(f"MeanVC server starting on port {port}")
-    web.run_app(app, port=port)
+    ssl_dir = os.environ.get("SSL_DIR", "/app/ssl")
+    ssl_context = None
+    cert_file = os.path.join(ssl_dir, "cert.pem")
+    key_file = os.path.join(ssl_dir, "key.pem")
+    if os.path.exists(cert_file) and os.path.exists(key_file):
+        ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+        ssl_context.load_cert_chain(cert_file, key_file)
+        logger.info(f"SSL enabled from {ssl_dir}")
+    logger.info(
+        f"MeanVC server starting on port {port} (ssl={ssl_context is not None})"
+    )
+    web.run_app(app, port=port, ssl_context=ssl_context)
 
 
 if __name__ == "__main__":

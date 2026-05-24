@@ -43,6 +43,8 @@ services:
       - "5002:5002"
     volumes:
       - ../models/meanvc-sv:/app/meanvc-src/runtime/speaker_verification/ckpt:ro
+      - ../infra/ssl:/app/ssl:ro
     environment:
       - MEANVC_CKPT_DIR=/app/meanvc-src/ckpt
       - MEANVC_SV_CKPT=/app/meanvc-src/runtime/speaker_verification/ckpt/wavlm_large_finetune.pth
+      - SSL_DIR=/app/ssl
