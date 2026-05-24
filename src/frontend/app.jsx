@@ -1075,7 +1075,7 @@ const MeanVCTest = () => {
 
       // ScriptProcessor to capture raw 16kHz float32
       const source = audioCtx.createMediaStreamSource(stream);
-      const processor = audioCtx.createScriptProcessor(3200, 1, 1);
+      const processor = audioCtx.createScriptProcessor(4096, 1, 1);
       processorRef.current = processor;
 
       const wsUrl = `${wsProtocol}//${MEANVC_HOST}:${MEANVC_PORT}/api/meanvc/stream?target_id=${targetId}&steps=2`;
@@ -1103,11 +1103,20 @@ const MeanVCTest = () => {
       ws.onerror = () => setStatus("WebSocket error");
       ws.onclose = () => { setIsStreaming(false); setStatus("Stream stopped"); };
 
-      // Send audio chunks to server
+      // Send audio chunks to server, accumulate to 3200 samples
+      let accBuffer = new Float32Array(0);
       processor.onaudioprocess = (e) => {
         if (ws.readyState === WebSocket.OPEN) {
           const input = e.inputBuffer.getChannelData(0);
-          ws.send(input.buffer);
+          const merged = new Float32Array(accBuffer.length + input.length);
+          merged.set(accBuffer, 0);
+          merged.set(input, accBuffer.length);
+          let offset = 0;
+          while (offset + 3200 <= merged.length) {
+            ws.send(merged.slice(offset, offset + 3200).buffer);
+            offset += 3200;
+          }
+          accBuffer = merged.slice(offset);
         }
       };
 
