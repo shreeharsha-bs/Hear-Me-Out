@@ -1079,7 +1079,7 @@ const MeanVCTest = () => {
       const processor = audioCtx.createScriptProcessor(2048, 1, 1);
       processorRef.current = processor;
 
-      const wsUrl = `${wsProtocol}//${MEANVC_HOST}:${MEANVC_PORT}/api/meanvc/stream?target_id=${targetId}&steps=2`;
+      const wsUrl = `${wsProtocol}//${MEANVC_HOST}:${MEANVC_PORT}/api/meanvc/stream?target_id=${targetId}&steps=2&source_sr=${audioCtx.sampleRate}`;
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
 

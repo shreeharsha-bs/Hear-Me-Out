@@ -379,6 +379,16 @@ async def handle_stream(request: web.Request) -> web.WebSocketResponse:
     """WebSocket /api/meanvc/stream?target_id=X - bidirectional streaming."""
     target_id = request.query.get("target_id", "default")
     steps = int(request.query.get("steps", 2))
+    source_sr = int(request.query.get("source_sr", 16000))
+    need_resample = source_sr != 16000
+
+    if need_resample:
+        import torchaudio.functional as F
+
+        resampler = torchaudio.transforms.Resample(
+            orig_freq=source_sr, new_freq=16000
+        ).to("cpu")
+        logger.info(f"Resampling enabled: {source_sr}Hz -> 16000Hz")
 
     if target_id not in targets:
         ws = web.WebSocketResponse()
@@ -402,6 +412,11 @@ async def handle_stream(request: web.Request) -> web.WebSocketResponse:
         if msg.type == web.WSMsgType.BINARY:
             raw = msg.data
             incoming = np.frombuffer(raw, dtype=np.float32).copy()
+
+            if need_resample:
+                t = torch.from_numpy(incoming).unsqueeze(0)
+                incoming = resampler(t).squeeze(0).numpy()
+
             acc_samples = np.concatenate([acc_samples, incoming])
 
             while len(acc_samples) >= session.CHUNK:
