@@ -392,6 +392,7 @@ async def handle_stream(request: web.Request) -> web.WebSocketResponse:
 
     session = InferenceSession(models, spk_emb, prompt_mel, steps=steps)
     chunk_count = 0
+    acc_samples = np.array([], dtype=np.float32)
 
     ws = web.WebSocketResponse()
     await ws.prepare(request)
@@ -399,20 +400,25 @@ async def handle_stream(request: web.Request) -> web.WebSocketResponse:
 
     async for msg in ws:
         if msg.type == web.WSMsgType.BINARY:
-            chunk_count += 1
             raw = msg.data
-            samples = np.frombuffer(raw, dtype=np.float32).copy()
+            incoming = np.frombuffer(raw, dtype=np.float32).copy()
+            acc_samples = np.concatenate([acc_samples, incoming])
 
-            if session.need_extra_data:
-                extra = np.zeros(720, dtype=np.float32)
-                samples = np.concatenate([samples, extra])
-                session.need_extra_data = False
+            while len(acc_samples) >= session.CHUNK:
+                chunk = acc_samples[: session.CHUNK]
+                acc_samples = acc_samples[session.CHUNK :]
+                chunk_count += 1
 
-            try:
-                vc_wav = session.inference_one_chunk(samples)
-                await ws.send_bytes(vc_wav.tobytes())
-            except Exception as e:
-                logger.error(f"Inference error on chunk {chunk_count}: {e}")
+                if chunk_count == 1:
+                    chunk = np.concatenate([chunk, np.zeros(720, dtype=np.float32)])
+                    vc_wav = session.inference_one_chunk(chunk)
+                    continue  # skip first chunk output (warmup padding)
+
+                try:
+                    vc_wav = session.inference_one_chunk(chunk)
+                    await ws.send_bytes(vc_wav.tobytes())
+                except Exception as e:
+                    logger.error(f"Inference error on chunk {chunk_count}: {e}")
 
         elif msg.type == web.WSMsgType.TEXT:
             cmd = json.loads(msg.data)
