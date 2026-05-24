@@ -34,3 +34,15 @@ services:
       - VC_CHECKPOINT_PATH=/app/models/seed-vc/DiT_uvit_tat_xlsr_ema.pth
       - VC_MODEL_CONFIG=configs/presets/config_dit_mel_seed_uvit_xlsr_tiny.yml
     command: ["python", "-m", "uvicorn", "src.app:create_app", "--factory", "--host", "0.0.0.0", "--port", "5001", "--ssl-keyfile=/app/ssl/key.pem", "--ssl-certfile=/app/ssl/cert.pem"]
+
+  meanvc-api:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.meanvc
+    ports:
+      - "5002:5002"
+    volumes:
+      - ../models/meanvc-sv:/app/meanvc-src/runtime/speaker_verification/ckpt:ro
+    environment:
+      - MEANVC_CKPT_DIR=/app/meanvc-src/ckpt
+      - MEANVC_SV_CKPT=/app/meanvc-src/runtime/speaker_verification/ckpt/wavlm_large_finetune.pth

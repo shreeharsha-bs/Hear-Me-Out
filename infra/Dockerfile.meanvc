@@ -1,0 +1,58 @@
+FROM python:3.11-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libsndfile1 \
+    git \
+    build-essential \
+    portaudio19-dev \
+    ffmpeg \
+ && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Clone MeanVC
+RUN git clone https://github.com/ASLP-lab/MeanVC.git /tmp/meanvc \
+ && cp -r /tmp/meanvc/src /app/meanvc-src \
+ && cp -r /tmp/meanvc/vocos /app/vocos \
+ && rm -rf /tmp/meanvc
+
+# Install core deps (no GPU needed, MeanVC runs CPU)
+RUN pip install --no-cache-dir \
+    torch==2.5.1 \
+    torchaudio==2.5.1 \
+    --index-url https://download.pytorch.org/whl/cpu
+
+RUN pip install --no-cache-dir \
+    numpy==1.26.4 \
+    librosa==0.10.2 \
+    einops==0.8.0 \
+    tqdm \
+    "transformers>=4.46" \
+    aiohttp>=3.10 \
+    pydub==0.25.1
+
+# Download HF checkpoints (ASR, VC, Vocoder models)
+RUN pip install --no-cache-dir huggingface-hub>=0.24
+RUN python3 -c "
+from huggingface_hub import snapshot_download
+from pathlib import Path
+Path('/app/meanvc-src/ckpt').mkdir(parents=True, exist_ok=True)
+snapshot_download('ASLP-lab/MeanVC',
+    allow_patterns=['meanvc_200ms.pt', 'fastu2++.pt', 'vocos.pt', 'model_200ms.safetensors'],
+    local_dir='/app/meanvc-src/ckpt',
+    local_dir_use_symlinks=False,
+    repo_type='model')
+"
+
+# Speaker verification model (manual download from Google Drive - mount as volume at runtime)
+RUN mkdir -p /app/meanvc-src/runtime/speaker_verification/ckpt
+
+# Our server wrapper
+COPY infra/meanvc_server.py /app/server.py
+
+EXPOSE 5002
+
+ENV MEANVC_CKPT_DIR=/app/meanvc-src/ckpt
+ENV MEANVC_SV_CKPT=/app/meanvc-src/runtime/speaker_verification/ckpt/wavlm_large_finetune.pth
+
+CMD ["python3", "/app/server.py"]

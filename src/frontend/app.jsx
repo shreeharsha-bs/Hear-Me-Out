@@ -77,6 +77,9 @@ const getPersonaplexWsURL = () => {
 }
 
 const App = () => {
+  // View toggle
+  const [currentView, setCurrentView] = useState('conversation'); // 'conversation' | 'meanvc'
+
   // Mic Input
   const [recorder, setRecorder] = useState(null); // Opus recorder
   const [amplitude, setAmplitude] = useState(0); // Amplitude, captured from PCM analyzer
@@ -606,14 +609,26 @@ const App = () => {
     <div className="bg-gray-900 text-white min-h-screen flex flex-col">
       <header className="w-full flex items-center p-4 bg-gray-800 fixed top-0 left-0 z-10">
         <img src="./KTH_Logo.jpg" alt="KTH Logo" className="h-20 mr-4" />
-        <div>
+        <div className="flex-1">
           <h1 className="text-3xl font-bold">Hear Me Out</h1>
           <h2 className="text-xl">Interactive evaluation and bias discovery platform for
           speech-to-speech conversational AI</h2>
           <h3 className="text-lg">KTH Royal Institute of Technology, Stockholm, Sweden</h3>
         </div>
+        <button
+          onClick={() => setCurrentView(currentView === 'conversation' ? 'meanvc' : 'conversation')}
+          className={`px-4 py-2 rounded-lg font-semibold text-sm transition-colors ${
+            currentView === 'meanvc' ? 'bg-green-600 hover:bg-green-500' : 'bg-gray-600 hover:bg-gray-500'
+          }`}
+        >
+          {currentView === 'conversation' ? 'MeanVC Test' : 'PersonaPlex Chat'}
+        </button>
       </header>
-      
+
+      {currentView === 'meanvc' ? (
+        <MeanVCTest />
+      ) : (
+      <>
       <div className="flex h-screen pt-32">
         {/* Collapsible Sidebar */}
         <div className={`${isSidebarCollapsed ? 'w-12' : 'w-80'} bg-gray-800 fixed left-0 top-32 bottom-0 transition-all duration-300 shadow-lg flex flex-col h-auto z-10`}>
@@ -975,48 +990,229 @@ const App = () => {
           </div>
         </div>
       </div>
+      </>
+    )}
     </div>
   );
-}
+};
 
-const PreviousConversationDisplay = ({ conversation, conversationNumber }) => {
-  const allSentences = [...conversation.completedSentences];
-  if (conversation.pendingSentence.trim() !== '') {
-    allSentences.push(conversation.pendingSentence);
-  }
+// MeanVC Test Component
+const MeanVCTest = () => {
+  const [targetId, setTargetId] = useState(null);
+  const [targetInfo, setTargetInfo] = useState(null);
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [status, setStatus] = useState("Upload a target voice file to begin");
+  const [inputDevices, setInputDevices] = useState([]);
+  const [outputDevices, setOutputDevices] = useState([]);
+  const [selectedInputDevice, setSelectedInputDevice] = useState("");
+  const [selectedOutputDevice, setSelectedOutputDevice] = useState("");
+  const wsRef = useRef(null);
+  const streamRef = useRef(null);
+  const audioContextRef = useRef(null);
+  const processorRef = useRef(null);
 
-  // Remove empty last sentence if it exists
-  if (allSentences.length > 1 && allSentences[allSentences.length - 1].trim() === '') {
-    allSentences.pop();
-  }
+  const MEANVC_HOST = window.__MEANVC_HOST__ || window.location.hostname;
+  const MEANVC_PORT = 5002;
+  const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+
+  useEffect(() => {
+    navigator.mediaDevices.enumerateDevices().then((devices) => {
+      setInputDevices(devices.filter((d) => d.kind === "audioinput"));
+      setOutputDevices(devices.filter((d) => d.kind === "audiooutput"));
+    });
+  }, []);
+
+  const uploadTarget = async (file) => {
+    setStatus("Extracting speaker embedding...");
+    const formData = new FormData();
+    formData.append("wav", file);
+    try {
+      const resp = await fetch(`${window.location.protocol}//${MEANVC_HOST}:${MEANVC_PORT}/api/meanvc/load-target`, {
+        method: "POST",
+        body: formData,
+      });
+      const data = await resp.json();
+      if (data.target_id) {
+        setTargetId(data.target_id);
+        setTargetInfo(data);
+        setStatus(`Target loaded: ${file.name} (${data.duration_seconds}s)`);
+      } else {
+        setStatus("Error loading target: " + (data.error || "unknown error"));
+      }
+    } catch (e) {
+      setStatus("Error loading target: " + e.message);
+    }
+  };
+
+  const startStream = async () => {
+    if (!targetId) {
+      setStatus("Upload a target voice file first");
+      return;
+    }
+    setStatus("Starting stream...");
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          deviceId: selectedInputDevice ? { exact: selectedInputDevice } : undefined,
+          sampleRate: 16000,
+          channelCount: 1,
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: false,
+        },
+      });
+      streamRef.current = stream;
+
+      const audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+      audioContextRef.current = audioCtx;
+
+      // ScriptProcessor to capture raw 16kHz float32
+      const source = audioCtx.createMediaStreamSource(stream);
+      const processor = audioCtx.createScriptProcessor(3200, 1, 1);
+      processorRef.current = processor;
+
+      const wsUrl = `${wsProtocol}//${MEANVC_HOST}:${MEANVC_PORT}/api/meanvc/stream?target_id=${targetId}&steps=2`;
+      const ws = new WebSocket(wsUrl);
+      wsRef.current = ws;
+
+      ws.onopen = () => setStatus("Connected - streaming audio");
+
+      ws.onmessage = async (event) => {
+        if (typeof event.data === "string") {
+          const msg = JSON.parse(event.data);
+          if (msg.status === "ready") setStatus("Streaming voice conversion...");
+          return;
+        }
+        // Play received audio
+        const float32 = new Float32Array(await event.data.arrayBuffer());
+        const buffer = audioCtx.createBuffer(1, float32.length, 16000);
+        buffer.getChannelData(0).set(float32);
+        const outSource = audioCtx.createBufferSource();
+        outSource.buffer = buffer;
+        outSource.connect(audioCtx.destination);
+        outSource.start();
+      };
+
+      ws.onerror = () => setStatus("WebSocket error");
+      ws.onclose = () => { setIsStreaming(false); setStatus("Stream stopped"); };
+
+      // Send audio chunks to server
+      processor.onaudioprocess = (e) => {
+        if (ws.readyState === WebSocket.OPEN) {
+          const input = e.inputBuffer.getChannelData(0);
+          ws.send(input.buffer);
+        }
+      };
+
+      source.connect(processor);
+      processor.connect(audioCtx.destination); // Silence pass-through
+      setIsStreaming(true);
+    } catch (e) {
+      setStatus("Error: " + e.message);
+    }
+  };
+
+  const stopStream = () => {
+    if (processorRef.current) processorRef.current.disconnect();
+    if (streamRef.current) streamRef.current.getTracks().forEach((t) => t.stop());
+    if (audioContextRef.current) audioContextRef.current.close();
+    if (wsRef.current) wsRef.current.close();
+    setIsStreaming(false);
+    setStatus("Stopped");
+  };
+
+  useEffect(() => {
+    return () => {
+      if (streamRef.current) streamRef.current.getTracks().forEach((t) => t.stop());
+      if (wsRef.current) wsRef.current.close();
+    };
+  }, []);
 
   return (
-    <div className="min-w-[32rem] max-w-2xl">
-      <div className="bg-gray-800 rounded-lg shadow-lg w-full p-6 flex flex-col items-center border-l-4 border-blue-300">
-        <div className="flex w-full mb-2">
-          <h3 className="text-lg font-semibold text-blue-300">
-            Response to Original Voice (Conversation {conversationNumber})
-          </h3>
+    <div className="bg-gray-900 text-white min-h-screen flex flex-col">
+      <header className="w-full flex items-center p-4 bg-gray-800 fixed top-0 left-0 z-10">
+        <h1 className="text-2xl font-bold text-green-400">MeanVC Test Tool</h1>
+        <span className="ml-4 text-sm text-gray-400">Real-time Voice Conversion</span>
+      </header>
+
+      <div className="pt-24 p-6 max-w-2xl mx-auto w-full space-y-6">
+        {/* Target Voice Upload */}
+        <div className="bg-gray-800 rounded-lg p-6">
+          <h2 className="text-lg font-semibold text-blue-400 mb-3">1. Target Voice</h2>
+          {targetInfo && (
+            <p className="text-sm text-green-400 mb-2">
+              Loaded: {targetInfo.duration_seconds}s ({targetId})
+            </p>
+          )}
+          <input
+            type="file"
+            accept="audio/wav,.wav"
+            onChange={(e) => { if (e.target.files[0]) uploadTarget(e.target.files[0]); }}
+            className="w-full text-sm text-gray-300 file:mr-4 file:py-2 file:px-4 file:rounded file:bg-blue-600 file:text-white file:border-0 hover:file:bg-blue-500"
+          />
         </div>
-        <div className="w-full">
-          <div className="flex flex-col-reverse overflow-y-auto max-h-64 pr-2">
-            {conversation.warmupComplete ? (
-              allSentences.length > 0 ? (
-                allSentences.map((sentence, index) => (
-                  <p key={index} className="text-gray-300 my-2">{sentence}</p>
-                )).reverse()
-              ) : (
-                <p className="text-gray-400 italic">No responses recorded</p>
-              )
-            ) : (
-              <p className="text-gray-400 italic">Conversation was not completed</p>
-            )}
+
+        {/* Device Selection */}
+        <div className="bg-gray-800 rounded-lg p-6">
+          <h2 className="text-lg font-semibold text-blue-400 mb-3">2. Device Selection</h2>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">Input (Microphone)</label>
+              <select
+                value={selectedInputDevice}
+                onChange={(e) => setSelectedInputDevice(e.target.value)}
+                className="w-full bg-gray-700 text-white text-sm rounded px-3 py-2"
+              >
+                <option value="">Default</option>
+                {inputDevices.map((d) => (
+                  <option key={d.deviceId} value={d.deviceId}>{d.label || d.deviceId}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">Output (Speaker)</label>
+              <select
+                value={selectedOutputDevice}
+                onChange={(e) => setSelectedOutputDevice(e.target.value)}
+                className="w-full bg-gray-700 text-white text-sm rounded px-3 py-2"
+              >
+                <option value="">Default</option>
+                {outputDevices.map((d) => (
+                  <option key={d.deviceId} value={d.deviceId}>{d.label || d.deviceId}</option>
+                ))}
+              </select>
+            </div>
           </div>
+        </div>
+
+        {/* Controls */}
+        <div className="bg-gray-800 rounded-lg p-6">
+          <h2 className="text-lg font-semibold text-blue-400 mb-3">3. Stream</h2>
+          <div className="flex gap-4">
+            <button
+              onClick={startStream}
+              disabled={isStreaming}
+              className="px-6 py-3 bg-green-600 hover:bg-green-500 disabled:bg-gray-600 rounded-lg font-semibold text-white"
+            >
+              {isStreaming ? "Streaming..." : "Start Streaming"}
+            </button>
+            <button
+              onClick={stopStream}
+              disabled={!isStreaming}
+              className="px-6 py-3 bg-red-600 hover:bg-red-500 disabled:bg-gray-600 rounded-lg font-semibold text-white"
+            >
+              Stop
+            </button>
+          </div>
+          <p className="mt-3 text-sm text-gray-300">
+            Status: <span className={isStreaming ? "text-green-400" : "text-yellow-400"}>{status}</span>
+          </p>
         </div>
       </div>
     </div>
   );
 };
+
 
 const SuggestionSidebar = () => {
   const suggestions = [
