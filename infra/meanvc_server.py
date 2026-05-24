@@ -404,13 +404,9 @@ async def handle_stream(request: web.Request) -> web.WebSocketResponse:
             samples = np.frombuffer(raw, dtype=np.float32).copy()
 
             if session.need_extra_data:
-                # First chunk: pad with silence for the look-ahead
                 extra = np.zeros(720, dtype=np.float32)
                 samples = np.concatenate([samples, extra])
                 session.need_extra_data = False
-
-            if chunk_count % 50 == 0 and chunk_count > 0:
-                session.reset_cache()
 
             try:
                 vc_wav = session.inference_one_chunk(samples)
