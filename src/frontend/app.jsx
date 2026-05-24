@@ -77,8 +77,15 @@ const getPersonaplexWsURL = () => {
 }
 
 const App = () => {
-  // View toggle
-  const [currentView, setCurrentView] = useState('conversation'); // 'conversation' | 'meanvc'
+  // View toggle: /?view=meanvc shows MeanVC test, default is conversation
+  const params = new URLSearchParams(window.location.search);
+  const [currentView, setCurrentView] = useState(
+    params.get('view') === 'meanvc' ? 'meanvc' : 'conversation'
+  );
+  const switchView = (view) => {
+    setCurrentView(view);
+    window.history.replaceState({}, '', view === 'meanvc' ? '/?view=meanvc' : '/');
+  };
 
   // Mic Input
   const [recorder, setRecorder] = useState(null); // Opus recorder
@@ -616,12 +623,12 @@ const App = () => {
           <h3 className="text-lg">KTH Royal Institute of Technology, Stockholm, Sweden</h3>
         </div>
         <button
-          onClick={() => setCurrentView(currentView === 'conversation' ? 'meanvc' : 'conversation')}
+          onClick={() => switchView(currentView === 'conversation' ? 'meanvc' : 'conversation')}
           className={`px-4 py-2 rounded-lg font-semibold text-sm transition-colors ${
-            currentView === 'meanvc' ? 'bg-green-600 hover:bg-green-500' : 'bg-gray-600 hover:bg-gray-500'
+            currentView === 'meanvc' ? 'bg-gray-600 hover:bg-gray-500' : 'bg-green-600 hover:bg-green-500'
           }`}
         >
-          {currentView === 'conversation' ? 'MeanVC Test' : 'PersonaPlex Chat'}
+          {currentView === 'conversation' ? 'Voice Conversion Test' : 'PersonaPlex Chat'}
         </button>
       </header>
 
@@ -1129,13 +1136,11 @@ const MeanVCTest = () => {
   }, []);
 
   return (
-    <div className="bg-gray-900 text-white min-h-screen flex flex-col">
-      <header className="w-full flex items-center p-4 bg-gray-800 fixed top-0 left-0 z-10">
-        <h1 className="text-2xl font-bold text-green-400">MeanVC Test Tool</h1>
-        <span className="ml-4 text-sm text-gray-400">Real-time Voice Conversion</span>
-      </header>
-
-      <div className="pt-24 p-6 max-w-2xl mx-auto w-full space-y-6">
+    <div className="pt-24 p-6 max-w-2xl mx-auto w-full space-y-6">
+      <div className="text-center mb-4">
+        <h1 className="text-3xl font-bold text-green-400">Voice Conversion Test Bench</h1>
+        <p className="text-sm text-gray-400 mt-2">Test Seed-VC (one-shot) and MeanVC (real-time streaming)</p>
+      </div>
         {/* Target Voice Upload */}
         <div className="bg-gray-800 rounded-lg p-6">
           <h2 className="text-lg font-semibold text-blue-400 mb-3">1. Target Voice</h2>
@@ -1208,7 +1213,55 @@ const MeanVCTest = () => {
             Status: <span className={isStreaming ? "text-green-400" : "text-yellow-400"}>{status}</span>
           </p>
         </div>
+
+        {/* Seed-VC One-Shot Test */}
+        <SeedVCTest />
       </div>
+    </div>
+  );
+};
+
+// Seed-VC One-Shot Test Component
+const SeedVCTest = () => {
+  const [svSource, setSvSource] = useState(null);
+  const [svTarget, setSvTarget] = useState(null);
+  const [svConverting, setSvConverting] = useState(false);
+  const [svResult, setSvResult] = useState(null);
+  const [svError, setSvError] = useState(null);
+
+  const convert = async () => {
+    if (!svSource || !svTarget) { setSvError("Select both source and target audio"); return; }
+    setSvConverting(true); setSvError(null);
+    const fd = new FormData();
+    fd.append("source_audio", svSource);
+    fd.append("target_audio", svTarget);
+    try {
+      const resp = await fetch("/api/voice-conversion", { method: "POST", body: fd });
+      if (!resp.ok) throw new Error((await resp.json()).detail || resp.statusText);
+      const blob = await resp.blob();
+      setSvResult(URL.createObjectURL(blob));
+    } catch (e) { setSvError(e.message); }
+    setSvConverting(false);
+  };
+
+  return (
+    <div className="bg-gray-800 rounded-lg p-6">
+      <h2 className="text-lg font-semibold text-blue-400 mb-3">Seed-VC (One-Shot Voice Conversion)</h2>
+      <div className="grid grid-cols-2 gap-4 mb-4">
+        <div>
+          <label className="block text-xs text-gray-400 mb-1">Source Audio</label>
+          <input type="file" accept="audio/*" onChange={e => setSvSource(e.target.files[0])} className="w-full text-sm text-gray-300 file:mr-4 file:py-2 file:px-4 file:rounded file:bg-blue-600 file:text-white file:border-0 hover:file:bg-blue-500" />
+        </div>
+        <div>
+          <label className="block text-xs text-gray-400 mb-1">Target Voice (reference)</label>
+          <input type="file" accept="audio/*" onChange={e => setSvTarget(e.target.files[0])} className="w-full text-sm text-gray-300 file:mr-4 file:py-2 file:px-4 file:rounded file:bg-blue-600 file:text-white file:border-0 hover:file:bg-blue-500" />
+        </div>
+      </div>
+      <button onClick={convert} disabled={svConverting} className="px-6 py-3 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-600 rounded-lg font-semibold text-white">
+        {svConverting ? "Converting..." : "Convert"}
+      </button>
+      {svError && <p className="mt-3 text-sm text-red-400">{svError}</p>}
+      {svResult && <audio controls src={svResult} className="mt-3 w-full" />}
     </div>
   );
 };
