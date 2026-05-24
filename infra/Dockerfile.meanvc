@@ -4,7 +4,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libsndfile1 \
     git \
     build-essential \
-    portaudio19-dev \
     ffmpeg \
  && rm -rf /var/lib/apt/lists/*
 
@@ -13,10 +12,9 @@ WORKDIR /app
 # Clone MeanVC
 RUN git clone https://github.com/ASLP-lab/MeanVC.git /tmp/meanvc \
  && cp -r /tmp/meanvc/src /app/meanvc-src \
- && cp -r /tmp/meanvc/vocos /app/vocos \
  && rm -rf /tmp/meanvc
 
-# Install core deps (no GPU needed, MeanVC runs CPU)
+# MeanVC is designed for CPU inference (JIT models, single-thread)
 RUN pip install --no-cache-dir \
     torch==2.5.1 \
     torchaudio==2.5.1 \
@@ -47,7 +45,6 @@ snapshot_download('ASLP-lab/MeanVC',
 # Speaker verification model (manual download from Google Drive - mount as volume at runtime)
 RUN mkdir -p /app/meanvc-src/runtime/speaker_verification/ckpt
 
-# Our server wrapper
 COPY infra/meanvc_server.py /app/server.py
 
 EXPOSE 5002

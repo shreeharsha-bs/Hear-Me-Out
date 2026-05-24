@@ -118,6 +118,7 @@ class SharedModels:
         torch.set_num_threads(4)
         self.ckpt_dir = Path(ckpt_dir)
         self.device = "cpu"
+        logger.info(f"MeanVC using device: {self.device}")
 
         logger.info("Loading Speaker Verification model (wavlm_large)...")
         from transformers import WavLMModel, Wav2Vec2FeatureExtractor
