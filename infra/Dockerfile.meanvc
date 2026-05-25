@@ -35,7 +35,7 @@ RUN pip install --no-cache-dir \
     omegaconf
 
 # Download HF checkpoints (ASR, VC, Vocoder models)
-RUN pip install --no-cache-dir huggingface-hub>=0.24
+RUN pip install --no-cache-dir huggingface-hub>=0.34
 RUN mkdir -p /app/meanvc-src/ckpt && python3 -c "from huggingface_hub import snapshot_download; snapshot_download('ASLP-lab/MeanVC', allow_patterns=['meanvc_200ms.pt','fastu2++.pt','vocos.pt','model_200ms.safetensors'], local_dir='/app/meanvc-src/ckpt', local_dir_use_symlinks=False, repo_type='model')"
 
 # Speaker verification model (manual download from Google Drive - mount as volume at runtime)
