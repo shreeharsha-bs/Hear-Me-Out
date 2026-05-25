@@ -48,7 +48,16 @@ pkill -f "meanvc_server" 2>/dev/null || true
 sleep 2
 
 echo "=== Starting PersonaPlex (GPU) on port 8000 (SSL) ==="
-python3 "$SCRIPT_DIR/personaplex_entry.py" --host 0.0.0.0 --port 8000 --device cuda --ssl "$SSL_DIR" &
+# Find personaPlex entrypoint (may be at /workspace/ or in Home)
+PERSONAPLEX_ENTRY=""
+for p in /workspace/personaplex_entry.py "$HOME/personaplex_entry.py" \
+         "$SCRIPT_DIR/personaplex_entrypoint.py" "$SCRIPT_DIR/personaplex_entry.py"; do
+    if [ -f "$p" ]; then PERSONAPLEX_ENTRY="$p"; break; fi
+done
+if [ -z "$PERSONAPLEX_ENTRY" ]; then
+    echo "ERROR: personaplex_entry.py not found"; exit 1
+fi
+python3 "$PERSONAPLEX_ENTRY" --host 0.0.0.0 --port 8000 --device cuda --ssl "$SSL_DIR" &
 PID1=$!
 
 # Find Hear-Me-Out directory
