@@ -47,5 +47,6 @@ EXPOSE 5002
 
 ENV MEANVC_CKPT_DIR=/app/meanvc-src/ckpt
 ENV MEANVC_SV_CKPT=/app/meanvc-src/runtime/speaker_verification/ckpt/wavlm_large_finetune.pth
+ENV SPEAKER_VERIFICATION_ROOT=/app
 
 CMD ["python3", "/app/server.py"]

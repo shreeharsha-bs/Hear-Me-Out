@@ -123,6 +123,9 @@ class SharedModels:
         logger.info("Loading Speaker Verification model (wavlm_large)...")
         sv_ckpt = sv_ckpt_path
         if os.path.exists(sv_ckpt):
+            sv_root = os.environ.get("SPEAKER_VERIFICATION_ROOT", os.getcwd())
+            if sv_root not in sys.path:
+                sys.path.insert(0, sv_root)
             from src.runtime.speaker_verification.verification import init_model
 
             self.sv_model = init_model("wavlm_large", sv_ckpt)
