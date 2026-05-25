@@ -1,42 +1,54 @@
 #!/bin/bash
-# Hear-Me-Out: Start all 3 services
-# Works in both Docker containers (run_all.sh in CMD) and JupyterLab (/workspace/run_all.sh)
+# Hear-Me-Out: Start all 3 services with SSL
+# Works in both Docker containers and JupyterLab
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" 2>/dev/null && pwd)"
-PROJECT_DIR="${SCRIPT_DIR}"
 VENV_DIR=""
 
-# Find venv: check /workspace first (persistent volume), then $HOME
+# Find venv
 if [ -d /workspace/hearmeout-venv/bin ]; then
     VENV_DIR=/workspace/hearmeout-venv
 elif [ -d "$HOME/hearmeout-venv/bin" ]; then
     VENV_DIR="$HOME/hearmeout-venv"
-fi
-
-if [ -z "$VENV_DIR" ]; then
-    echo "ERROR: No venv found at /workspace/hearmeout-venv or $HOME/hearmeout-venv"
+else
+    echo "ERROR: No venv found"
     exit 1
 fi
 
 source "$VENV_DIR/bin/activate"
 
-# Fix huggingface-hub if moshi-personaplex downgraded it
+# Auto-fix huggingface-hub
 python3 -c "from packaging.version import parse; from importlib.metadata import version; v=version('huggingface-hub'); exit(0 if parse(v) >= parse('0.34') else 1)" 2>/dev/null || {
-    echo "Fixing huggingface-hub version..."
     pip install --force-reinstall --no-deps "huggingface-hub>=0.34,<1.0" -q
 }
+
+# Generate SSL certs if missing
+SSL_DIR=""
+for d in /workspace/ssl "$SCRIPT_DIR/ssl" "$HOME/ssl"; do
+    if [ -f "$d/cert.pem" ] && [ -f "$d/key.pem" ]; then
+        SSL_DIR="$d"
+        break
+    fi
+done
+if [ -z "$SSL_DIR" ]; then
+    mkdir -p /workspace/ssl
+    openssl req -x509 -newkey rsa:2048 -keyout /workspace/ssl/key.pem -out /workspace/ssl/cert.pem \
+        -days 365 -nodes -subj "/CN=*" -addext "subjectAltName=IP:0.0.0.0" 2>/dev/null
+    SSL_DIR=/workspace/ssl
+    echo "Generated SSL certs in $SSL_DIR"
+fi
 
 export HF_HUB_ENABLE_HF_TRANSFER=1
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
-# Kill any stale services from previous runs
+# Kill stale services
 pkill -f "personaplex_entry" 2>/dev/null || true
 pkill -f "src.app:create_app" 2>/dev/null || true
 pkill -f "meanvc_server" 2>/dev/null || true
 sleep 2
 
-echo "=== Starting PersonaPlex (GPU) on port 8000 ==="
-python3 "$SCRIPT_DIR/personaplex_entry.py" --host 0.0.0.0 --port 8000 --device cuda &
+echo "=== Starting PersonaPlex (GPU) on port 8000 (SSL) ==="
+python3 "$SCRIPT_DIR/personaplex_entry.py" --host 0.0.0.0 --port 8000 --device cuda --ssl "$SSL_DIR" &
 PID1=$!
 
 # Find Hear-Me-Out directory
@@ -47,16 +59,16 @@ elif [ -d "$HOME/Hear-Me-Out" ]; then
 else
     HEARMEOUT_DIR="$SCRIPT_DIR"
 fi
-
 cd "$HEARMEOUT_DIR"
 
-export SPEAKER_VERIFICATION_ROOT="$HEARMEOUT_DIR/.."
-
-echo "=== Starting vc-api (seed-vc, GPU) on port 5001 ==="
-python3 -m uvicorn src.app:create_app --factory --host 0.0.0.0 --port 5001 &
+echo "=== Starting vc-api (seed-vc, GPU) on port 5001 (SSL) ==="
+python3 -m uvicorn src.app:create_app --factory --host 0.0.0.0 --port 5001 \
+    --ssl-keyfile "$SSL_DIR/key.pem" --ssl-certfile "$SSL_DIR/cert.pem" &
 PID2=$!
 
-echo "=== Starting MeanVC (CPU) on port 5002 ==="
+echo "=== Starting MeanVC (CPU) on port 5002 (SSL) ==="
+export SSL_DIR
+export SPEAKER_VERIFICATION_ROOT="$HEARMEOUT_DIR/.."
 python3 infra/meanvc_server.py &
 PID3=$!
 
