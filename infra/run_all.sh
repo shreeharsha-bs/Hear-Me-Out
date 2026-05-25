@@ -29,6 +29,12 @@ python3 -c "from packaging.version import parse; from importlib.metadata import 
 export HF_HUB_ENABLE_HF_TRANSFER=1
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
+# Kill any stale services from previous runs
+pkill -f "personaplex_entry" 2>/dev/null || true
+pkill -f "src.app:create_app" 2>/dev/null || true
+pkill -f "meanvc_server" 2>/dev/null || true
+sleep 2
+
 echo "=== Starting PersonaPlex (GPU) on port 8000 ==="
 python3 "$SCRIPT_DIR/personaplex_entry.py" --host 0.0.0.0 --port 8000 --device cuda &
 PID1=$!
