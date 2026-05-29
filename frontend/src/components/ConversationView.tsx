@@ -123,7 +123,7 @@ export function ConversationView({ ws, recorder }: Props) {
                 const pplxPcm = await wavBlobToPcm(pplxWav)
                 const merged = createWavFile(mergeFloat32s([userPcm, pplxPcm]), 48000)
                 setMergedWavUrl(URL.createObjectURL(merged))
-              } catch { /* merge optional */ }
+              } catch (e) { console.error("Merge failed:", e) }
             }
           }
         } catch (err) {
@@ -250,7 +250,7 @@ export function ConversationView({ ws, recorder }: Props) {
             </div>
           )}
 
-          {hasMessages && !isWarming && (
+          {hasMessages && !isWarming && !showResult && (
             <div className="p-4">
               {ws.transcripts.map((t, i) => (
                 <div key={i} className="mb-2">
