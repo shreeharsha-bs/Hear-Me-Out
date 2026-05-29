@@ -38,6 +38,19 @@ save_audio = None
 read_audio = None
 collect_chunks = None
 
+whisper_model = None
+
+
+def _init_whisper():
+    global whisper_model
+    if whisper_model is None:
+        from faster_whisper import WhisperModel
+
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        compute = "int8_float16" if torch.cuda.is_available() else "int8"
+        whisper_model = WhisperModel("tiny", device=device, compute_type=compute)
+        logger.info(f"Whisper model loaded on {device}")
+
 
 def _init_vad():
     global vad_model, get_speech_timestamps, save_audio, read_audio, collect_chunks
@@ -70,6 +83,22 @@ def create_app():
     @app.get("/api/health")
     async def health_check():
         return JSONResponse({"status": "healthy", "service": "vc-api"})
+
+    @app.post("/api/transcribe")
+    async def transcribe_audio(audio: UploadFile = File(...)):
+        _init_whisper()
+
+        contents = await audio.read()
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+            f.write(contents)
+            temp_path = f.name
+
+        try:
+            segments, _ = whisper_model.transcribe(temp_path, beam_size=1)
+            text = " ".join(s.text.strip() for s in segments if s.text.strip())
+            return JSONResponse({"text": text})
+        finally:
+            os.unlink(temp_path)
 
     @app.post("/api/voice-conversion")
     async def voice_conversion(

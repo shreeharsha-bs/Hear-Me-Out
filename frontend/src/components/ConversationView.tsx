@@ -1,4 +1,4 @@
-import { useCallback } from "react"
+import { useCallback, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -6,10 +6,12 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Badge } from "@/components/ui/badge"
 import { Spinner } from "@/components/ui/spinner"
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty"
-import { Mic, MicOff, ChevronRight, MessageSquareText, AudioLines } from "lucide-react"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Mic, MicOff, ChevronRight, MessageSquareText, AudioLines, AlertCircle } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { useRecorder } from "@/hooks/useRecorder"
 import type { useWebSocket } from "@/hooks/useWebSocket"
+import { transcribeRecording } from "@/hooks/useWebSocket"
 
 type WsState = ReturnType<typeof useWebSocket>
 type RecorderState = ReturnType<typeof useRecorder>
@@ -46,28 +48,76 @@ function WaveformBars() {
 }
 
 export function ConversationView({ ws, recorder }: Props) {
+  const micClicked = useRef(false)
+
   const startConversation = useCallback(() => {
     ws.clearTranscripts()
     ws.clearResponseChunks()
+    ws.clearError()
+    micClicked.current = true
     ws.connect()
-    recorder.start()
-  }, [ws, recorder])
+  }, [ws])
 
   const stopConversation = useCallback(() => {
     recorder.stop()
     ws.disconnect()
+    micClicked.current = false
   }, [recorder, ws])
+
+  // Start recording when server handshake is received
+  useEffect(() => {
+    if (ws.handshakeReceived && micClicked.current && !recorder.isRecording) {
+      recorder.start().catch(() => {
+        ws.disconnect()
+        micClicked.current = false
+      })
+    }
+  }, [ws.handshakeReceived, recorder, ws])
+
+  // Transcribe user audio when recording stops
+  useEffect(() => {
+    if (recorder.recordingAvailable && recorder.recordedChunks.length > 0) {
+      transcribeRecording(recorder.recordedChunks)
+        .then((text) => ws.addUserTranscript(text))
+        .catch(() => {})
+    }
+  }, [recorder.recordingAvailable, recorder.recordedChunks, ws])
+
+  const dismissError = useCallback(() => {
+    ws.clearError()
+  }, [ws])
 
   const isConnected = ws.connected
   const isWarming = isConnected && !ws.warmupComplete
   const hasMessages = ws.transcripts.length > 0 || !!ws.partialTranscript
+  const hasError = !!ws.error
 
   return (
     <div className="grid grid-cols-1 gap-5 md:grid-cols-[1fr_320px] md:h-[calc(100vh-140px)]">
       {/* LEFT: Message feed */}
       <Card className="flex flex-col overflow-hidden min-h-0">
         <CardContent className="flex flex-1 flex-col p-0" role="status" aria-live="polite">
-          {!hasMessages && !isWarming && (
+          {hasError && (
+            <Alert variant="destructive" className="m-4">
+              <AlertCircle />
+              <div className="flex flex-1 flex-col gap-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium">Connection failed</span>
+                  <Button
+                    variant="ghost"
+                    size="xs"
+                    onClick={dismissError}
+                    className="h-auto px-2 py-0.5 text-xs"
+                  >
+                    Dismiss
+                  </Button>
+                </div>
+                <AlertDescription>{ws.error}</AlertDescription>
+              </div>
+            </Alert>
+          )}
+
+          {!hasMessages && !isWarming && !hasError && (
             <div className="flex flex-1 items-center justify-center p-6">
               <Empty className="border-0">
                 <EmptyHeader>
@@ -97,13 +147,26 @@ export function ConversationView({ ws, recorder }: Props) {
             <ScrollArea className="flex-1">
               <div className="flex flex-col gap-2.5 p-5">
                 {ws.transcripts.map((t, i) => (
-                  <div key={i} className="rounded-lg bg-muted px-3.5 py-2.5">
-                    <p className="text-sm leading-relaxed">{t.text}</p>
+                  <div key={i}>
+                    <span className="mb-0.5 block text-[10px] font-medium text-muted-foreground/60">
+                      {t.speaker === "user" ? "You" : "PersonaPlex"}
+                    </span>
+                    <div className={cn(
+                      "rounded-lg px-3.5 py-2.5",
+                      t.speaker === "user" ? "bg-primary/10" : "bg-muted"
+                    )}>
+                      <p className="text-sm leading-relaxed">{t.text}</p>
+                    </div>
                   </div>
                 ))}
                 {ws.partialTranscript && (
-                  <div className="rounded-lg border border-primary/20 bg-primary/5 px-3.5 py-2.5">
-                    <p className="text-sm leading-relaxed">{ws.partialTranscript}</p>
+                  <div>
+                    <span className="mb-0.5 block text-[10px] font-medium text-muted-foreground/60">
+                      PersonaPlex
+                    </span>
+                    <div className="rounded-lg border border-primary/20 bg-primary/5 px-3.5 py-2.5">
+                      <p className="text-sm leading-relaxed">{ws.partialTranscript}</p>
+                    </div>
                   </div>
                 )}
               </div>
@@ -119,29 +182,49 @@ export function ConversationView({ ws, recorder }: Props) {
           <CardContent className="flex flex-col items-center gap-4 px-5 py-5">
             <div className="relative">
               {isConnected && (
-                <div className="animate-pulse absolute inset-0 -m-2 rounded-full shadow-[0_0_0_8px_rgba(16,185,129,0.12)]" />
+                <div className="animate-pulse absolute inset-0 -m-2 rounded-full shadow-[0_0_0_8px_rgba(239,68,68,0.15)]" />
+              )}
+              {hasError && !isConnected && (
+                <div className="animate-pulse absolute inset-0 -m-2 rounded-full shadow-[0_0_0_8px_rgba(239,68,68,0.12)]" />
               )}
               <Button
-                variant={isConnected ? "destructive" : "default"}
+                variant={isConnected ? "destructive" : hasError ? "destructive" : "default"}
                 onClick={isConnected ? stopConversation : startConversation}
+                disabled={isWarming}
                 className={cn(
                   "size-14 rounded-full",
-                  !isConnected && "shadow-md shadow-primary/20"
+                  isConnected && "bg-red-500 hover:bg-red-600 text-white border-0",
+                  !isConnected && !hasError && !isWarming && "shadow-md shadow-primary/20"
                 )}
                 aria-label={isConnected ? "Stop recording" : "Start recording"}
               >
-                {isConnected ? <MicOff /> : <Mic />}
+                {isWarming ? (
+                  <Spinner className="text-primary-foreground" />
+                ) : isConnected ? (
+                  <MicOff />
+                ) : (
+                  <Mic />
+                )}
               </Button>
             </div>
 
-            <div className="flex flex-col items-center gap-0.5 text-center">
-              <p className="text-sm font-medium">
-                {isConnected ? "Recording…" : "Tap to start"}
-              </p>
-              <p className="text-xs text-muted-foreground">
-                {isConnected ? "Speak naturally" : "Press to begin speaking"}
-              </p>
-            </div>
+            {isConnected && (
+              <div className="flex flex-col items-center gap-0.5 text-center">
+                <p className="text-sm font-medium text-destructive">Recording…</p>
+                <p className="text-xs text-muted-foreground">Tap to stop</p>
+              </div>
+            )}
+
+            {!isConnected && (
+              <div className="flex flex-col items-center gap-0.5 text-center">
+                <p className="text-sm font-medium">
+                  {hasError ? "Connection error" : "Tap to start"}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {hasError ? "Tap to retry" : "Press to begin speaking"}
+                </p>
+              </div>
+            )}
 
             <div className="flex flex-wrap items-center justify-center gap-1.5">
               <PipelinePill>Your voice</PipelinePill>
@@ -151,8 +234,8 @@ export function ConversationView({ ws, recorder }: Props) {
               <PipelinePill>Response</PipelinePill>
             </div>
 
-            <Badge variant={isConnected ? "default" : "secondary"}>
-              {isConnected ? "Connected" : "Ready"}
+            <Badge variant={hasError ? "destructive" : isConnected ? "default" : "secondary"}>
+              {hasError ? "Error" : isConnected ? "Connected" : "Ready"}
             </Badge>
           </CardContent>
         </Card>
