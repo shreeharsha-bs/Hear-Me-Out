@@ -30,7 +30,7 @@ export function useSpeechRecognition() {
 
     recognition.onerror = (event) => {
       if (event.error === "no-speech" || event.error === "aborted") return;
-      console.warn("Speech recognition error:", event.error);
+      console.warn("Speech recognition unavailable, using server-only transcription");
     };
 
     recognition.start();
