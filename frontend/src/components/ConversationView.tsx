@@ -8,7 +8,7 @@ import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Mic, MicOff, ChevronRight, MessageSquareText, AlertCircle, Download } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { webmToWavBlob } from "@/lib/audio"
+import { webmToWavBlob, wavBlobToPcm, mergeFloat32s, createWavFile } from "@/lib/audio"
 import type { useRecorder } from "@/hooks/useRecorder"
 import type { useWebSocket } from "@/hooks/useWebSocket"
 import { transcribeRecording } from "@/hooks/useWebSocket"
@@ -48,6 +48,7 @@ export function ConversationView({ ws, recorder }: Props) {
   const [diarized, setDiarized] = useState<DiarizedTurn[] | null>(null)
   const [userWavUrl, setUserWavUrl] = useState<string | null>(null)
   const [personaplexWavUrl, setPersonaplexWavUrl] = useState<string | null>(null)
+  const [mergedWavUrl, setMergedWavUrl] = useState<string | null>(null)
 
   const startConversation = useCallback(() => {
     ws.clearTranscripts()
@@ -58,6 +59,7 @@ export function ConversationView({ ws, recorder }: Props) {
     setDiarized(null)
     setUserWavUrl(null)
     setPersonaplexWavUrl(null)
+    setMergedWavUrl(null)
     ws.connect()
   }, [ws])
 
@@ -103,11 +105,19 @@ export function ConversationView({ ws, recorder }: Props) {
           for (const seg of userSegments) ws.addUserTranscript(seg.text)
 
           if (recorder.recordedChunks.length > 0) {
-            const wav = await webmToWavBlob(recorder.recordedChunks)
-            setUserWavUrl(URL.createObjectURL(wav))
+            const userWav = await webmToWavBlob(recorder.recordedChunks)
+            setUserWavUrl(URL.createObjectURL(userWav))
+            const pplxWav = await ws.getPersonaplexWav()
+            if (pplxWav) {
+              setPersonaplexWavUrl(URL.createObjectURL(pplxWav))
+              try {
+                const userPcm = await wavBlobToPcm(userWav)
+                const pplxPcm = await wavBlobToPcm(pplxWav)
+                const merged = createWavFile(mergeFloat32s([userPcm, pplxPcm]), 48000)
+                setMergedWavUrl(URL.createObjectURL(merged))
+              } catch { /* merge optional */ }
+            }
           }
-          const pplxWav = await ws.getPersonaplexWav()
-          if (pplxWav) setPersonaplexWavUrl(URL.createObjectURL(pplxWav))
         } catch (err) {
           console.error("Transcription failed:", err)
         }
@@ -142,19 +152,25 @@ export function ConversationView({ ws, recorder }: Props) {
         <div className="md:col-span-2 flex items-center justify-between rounded-lg border bg-muted/50 px-4 py-2">
           <span className="text-sm font-medium">Conversation complete</span>
           <div className="flex gap-2">
+            {mergedWavUrl && (
+              <a href={mergedWavUrl} download="conversation.wav"
+                className="inline-flex items-center gap-1 h-6 rounded-lg bg-primary px-2 text-xs font-medium text-primary-foreground hover:bg-primary/90">
+                <Download /> Merged audio
+              </a>
+            )}
             <Button variant="outline" size="xs" onClick={downloadTranscript}>
               <Download /> Transcript
             </Button>
             {userWavUrl && (
               <a href={userWavUrl} download="user-recording.wav"
                 className="inline-flex items-center gap-1 h-6 rounded-lg border px-2 text-xs font-medium hover:bg-muted">
-                <Download /> Your audio
+                Your audio
               </a>
             )}
             {personaplexWavUrl && (
               <a href={personaplexWavUrl} download="personaplex-response.wav"
                 className="inline-flex items-center gap-1 h-6 rounded-lg border px-2 text-xs font-medium hover:bg-muted">
-                <Download /> PP audio
+                PP audio
               </a>
             )}
           </div>

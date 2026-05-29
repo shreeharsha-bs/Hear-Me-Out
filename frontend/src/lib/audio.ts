@@ -59,13 +59,15 @@ export function mergeAudioBlobs(blobs: Blob[]): Blob {
   return new Blob(blobs, { type: "audio/wav" });
 }
 
-export function concatFloat32Arrays(arrays: Float32Array[]): Float32Array {
-  const total = arrays.reduce((s, a) => s + a.length, 0);
-  const merged = new Float32Array(total);
-  let offset = 0;
-  for (const a of arrays) {
-    merged.set(a, offset);
-    offset += a.length;
-  }
-  return merged;
+export async function wavBlobToPcm(blob: Blob): Promise<Float32Array> {
+  const arrayBuffer = await blob.arrayBuffer();
+  const ctx = new AudioContext();
+  const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
+  const pcm = new Float32Array(audioBuffer.getChannelData(0));
+  ctx.close();
+  return pcm;
+}
+
+export function mergeFloat32s(arrays: Float32Array[]): Float32Array {
+  return concatFloat32Arrays(arrays);
 }
