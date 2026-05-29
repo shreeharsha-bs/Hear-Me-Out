@@ -50,8 +50,17 @@ export function useWebSocket() {
   const socketRef = useRef<WebSocket | null>(null);
   const intentionalClose = useRef(false);
   const decoderRef = useRef<OggOpusDecoder | null>(null);
+  const mergedCtxRef = useRef<AudioContext | null>(null);
+  const mergedDestRef = useRef<AudioNode | null>(null);
+  const mergedEndRef = useRef(0);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const scheduledEnd = useRef(0);
+
+  const setMergedOutput = useCallback((ctx: AudioContext | null, dest: AudioNode | null) => {
+    mergedCtxRef.current = ctx;
+    mergedDestRef.current = dest;
+    mergedEndRef.current = 0;
+  }, []);
   const personaplexOpus = useRef<{ packet: Uint8Array; time: number }[]>([]);
   const conversationStart = useRef(0);
   const [connected, setConnected] = useState(false);
@@ -91,6 +100,8 @@ export function useWebSocket() {
 
     decoder.decode(raw).then(({ channelData, samplesDecoded }) => {
       if (samplesDecoded === 0) return;
+
+      // Play through speakers
       const buffer = ctx.createBuffer(1, samplesDecoded, ctx.sampleRate);
       buffer.copyToChannel(channelData[0], 0);
       const src = ctx.createBufferSource();
@@ -100,6 +111,21 @@ export function useWebSocket() {
       const start = Math.max(scheduledEnd.current, now);
       src.start(start);
       scheduledEnd.current = start + buffer.duration;
+
+      // Also route to merged capture stream
+      const mctx = mergedCtxRef.current;
+      const mdest = mergedDestRef.current;
+      if (mctx && mdest && mctx.state !== "closed") {
+        const mbuf = mctx.createBuffer(1, samplesDecoded, mctx.sampleRate);
+        mbuf.copyToChannel(channelData[0], 0);
+        const msrc = mctx.createBufferSource();
+        msrc.buffer = mbuf;
+        msrc.connect(mdest);
+        const mnow = mctx.currentTime;
+        const mstart = Math.max(mergedEndRef.current, mnow);
+        msrc.start(mstart);
+        mergedEndRef.current = mstart + mbuf.duration;
+      }
     }).catch(() => {});
   }, []);
 
@@ -264,5 +290,6 @@ export function useWebSocket() {
     getPersonaplexWav,
     getPersonaplexStartTime,
     getConversationDuration,
+    setMergedOutput,
   };
 }

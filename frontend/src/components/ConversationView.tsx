@@ -86,6 +86,11 @@ export function ConversationView({ ws, recorder }: Props) {
         ws.disconnect()
         micClicked.current = false
       })
+      // Route PersonaPlex audio into merged capture stream
+      ws.setMergedOutput(
+        recorder.mergedContext || null,
+        recorder.mergedDestination || null
+      )
     }
   }, [ws.handshakeReceived, recorder, ws])
 
@@ -123,16 +128,14 @@ export function ConversationView({ ws, recorder }: Props) {
             const userWav = await webmToWavBlob(recorder.recordedChunks)
             setUserWavUrl(URL.createObjectURL(userWav))
             const pplxWav = await ws.getPersonaplexWav()
-            console.log("PersonaPlex WAV:", pplxWav ? `${pplxWav.size} bytes` : "null")
-            if (pplxWav) {
-              setPersonaplexWavUrl(URL.createObjectURL(pplxWav))
+            if (pplxWav) setPersonaplexWavUrl(URL.createObjectURL(pplxWav))
+            // Use the simultaneously-captured merged stream as "All" audio
+            const mergedChunks = recorder.getMergedChunks()
+            if (mergedChunks.length > 0) {
               try {
-                const userPcm = await wavBlobToPcm(userWav)
-                const pplxPcm = await wavBlobToPcm(pplxWav)
-                // Simple concatenation: user voice, then PersonaPlex response
-                const merged = createWavFile(mergeFloat32s([userPcm, pplxPcm]), 48000)
-                setMergedWavUrl(URL.createObjectURL(merged))
-              } catch (e) { console.error("Merge failed:", e) }
+                const mergedWav = await webmToWavBlob(mergedChunks)
+                setMergedWavUrl(URL.createObjectURL(mergedWav))
+              } catch (e) { console.error("Merged audio conversion failed:", e) }
             }
           }
         } catch (err) {
