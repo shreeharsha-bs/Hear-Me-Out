@@ -52,7 +52,7 @@ export function useWebSocket() {
   const decoderRef = useRef<OggOpusDecoder | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const scheduledEnd = useRef(0);
-  const personaplexPcm = useRef<Float32Array[]>([]);
+  const personaplexOpus = useRef<Uint8Array[]>([]);
   const conversationStart = useRef(0);
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -86,9 +86,11 @@ export function useWebSocket() {
     const ctx = audioCtxRef.current;
     if (!decoder || !ctx) return;
 
-    decoder.decode(new Uint8Array(payload)).then(({ channelData, samplesDecoded }) => {
+    const raw = new Uint8Array(payload);
+    personaplexOpus.current = [...personaplexOpus.current, raw];
+
+    decoder.decode(raw).then(({ channelData, samplesDecoded }) => {
       if (samplesDecoded === 0) return;
-      personaplexPcm.current = [...personaplexPcm.current, new Float32Array(channelData[0])];
       const buffer = ctx.createBuffer(1, samplesDecoded, ctx.sampleRate);
       buffer.copyToChannel(channelData[0], 0);
       const src = ctx.createBufferSource();
@@ -129,7 +131,7 @@ export function useWebSocket() {
           setError(`Connection closed (code ${event.code}). ${event.reason || ""}`.trim());
         }
       }
-    personaplexPcm.current = [];
+    personaplexOpus.current = [];
     conversationStart.current = Date.now();
     intentionalClose.current = false;
     };
@@ -199,13 +201,25 @@ export function useWebSocket() {
     setResponseChunks([]);
   }, []);
 
-  const getPersonaplexWav = useCallback((): Blob | null => {
-    const chunks = personaplexPcm.current;
-    if (chunks.length === 0) return null;
-    const total = chunks.reduce((s, c) => s + c.length, 0);
+  const getPersonaplexWav = useCallback(async (): Promise<Blob | null> => {
+    const packets = personaplexOpus.current;
+    if (packets.length === 0) return null;
+    const decoder = decoderRef.current;
+    if (!decoder) return null;
+
+    const allPcm: Float32Array[] = [];
+    for (const packet of packets) {
+      try {
+        const { channelData, samplesDecoded } = await decoder.decode(packet);
+        if (samplesDecoded > 0) allPcm.push(new Float32Array(channelData[0]));
+      } catch {}
+    }
+
+    if (allPcm.length === 0) return null;
+    const total = allPcm.reduce((s, c) => s + c.length, 0);
     const combined = new Float32Array(total);
     let offset = 0;
-    for (const c of chunks) {
+    for (const c of allPcm) {
       combined.set(c, offset);
       offset += c.length;
     }
@@ -213,10 +227,8 @@ export function useWebSocket() {
   }, []);
 
   const getConversationDuration = useCallback((): number => {
-    const chunks = personaplexPcm.current;
-    if (chunks.length === 0) return 0;
-    const totalSamples = chunks.reduce((s, c) => s + c.length, 0);
-    return totalSamples / 48000;
+    const packets = personaplexOpus.current;
+    return packets.length * 0.02; // ~20ms per Opus frame
   }, []);
 
   const clearError = useCallback(() => {

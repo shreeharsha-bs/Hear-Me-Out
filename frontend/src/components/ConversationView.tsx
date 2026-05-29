@@ -140,7 +140,7 @@ export function ConversationView({ ws, recorder }: Props) {
             const wav = await webmToWavBlob(recorder.recordedChunks)
             setUserWavUrl(URL.createObjectURL(wav))
           }
-          const pplxWav = ws.getPersonaplexWav()
+          const pplxWav = await ws.getPersonaplexWav()
           if (pplxWav) {
             setPersonaplexWavUrl(URL.createObjectURL(pplxWav))
           }
