@@ -5,3 +5,6 @@ checkpoints/.locks/*
 checkpoints/hf_cache*
 tools/__pycache__/
 models/
+.opencode/
+.agents/
+skills-lock.json
