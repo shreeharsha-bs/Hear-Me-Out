@@ -136,7 +136,7 @@ export function ConversationView({ ws, recorder }: Props) {
   const showResult = diarized !== null && !isConnected
 
   return (
-    <div className="flex flex-col gap-4 md:grid md:grid-cols-[1fr_260px] md:gap-4 md:h-full md:overflow-hidden">
+    <div className="flex flex-col gap-4 md:grid md:grid-cols-[1fr_280px] md:gap-4 md:h-full pb-2">
       {/* Download bar — outside card */}
       {showResult && (
         <div className="md:col-span-2 flex items-center justify-between rounded-lg border bg-muted/50 px-4 py-2">
@@ -227,7 +227,7 @@ export function ConversationView({ ws, recorder }: Props) {
 
       {/* RIGHT: Controls column */}
       <div className="flex flex-col gap-4 order-first md:order-none">
-        <Card className="py-0">
+        <Card className="py-0 overflow-visible">
           <CardContent className="flex flex-col items-center gap-3 px-4 py-4">
             <div className="relative">
               {isConnected && (
@@ -266,11 +266,11 @@ export function ConversationView({ ws, recorder }: Props) {
               </div>
             )}
 
-            <div className="flex flex-wrap items-center justify-center gap-1">
+            <div className="flex flex-nowrap items-center justify-center gap-1">
               <PipelinePill>Your voice</PipelinePill>
-              <ChevronRight className="size-2.5 text-muted-foreground/50" />
+              <ChevronRight className="size-2.5 shrink-0 text-muted-foreground/50" />
               <PipelinePill>PersonaPlex</PipelinePill>
-              <ChevronRight className="size-2.5 text-muted-foreground/50" />
+              <ChevronRight className="size-2.5 shrink-0 text-muted-foreground/50" />
               <PipelinePill>Response</PipelinePill>
             </div>
 
@@ -280,7 +280,7 @@ export function ConversationView({ ws, recorder }: Props) {
           </CardContent>
         </Card>
 
-        <Card className="flex flex-1 flex-col overflow-hidden h-full py-0">
+        <Card className="flex flex-1 flex-col overflow-visible py-0 min-h-[120px]">
           <CardContent className="flex flex-1 flex-col p-0">
             {!hasMessages && !isWarming ? (
               <div className="flex flex-1 flex-col items-center justify-center gap-2 p-4">
