@@ -184,8 +184,6 @@ export function useWebSocket() {
     setWarmupComplete(false);
     setHandshakeReceived(false);
     scheduledEnd.current = 0;
-    personaplexPcm.current = [];
-    conversationStart.current = 0;
   }, []);
 
   useEffect(() => {
