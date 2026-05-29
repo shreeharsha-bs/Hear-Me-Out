@@ -135,6 +135,11 @@ export function ConversationView({ ws, recorder }: Props) {
           )
           setDiarized(merged)
 
+          // Add user transcripts to display
+          for (const seg of userSegments) {
+            ws.addUserTranscript(seg.text)
+          }
+
           // Create audio download URLs
           if (recorder.recordedChunks.length > 0) {
             const wav = await webmToWavBlob(recorder.recordedChunks)
@@ -150,16 +155,6 @@ export function ConversationView({ ws, recorder }: Props) {
       })()
     }
   }, [recorder.recordingAvailable])
-
-  // Add user segments to transcripts for display
-  useEffect(() => {
-    if (diarized) {
-      const userTurns = diarized.filter((t) => t.speaker === "user" && t.text)
-      for (const turn of userTurns) {
-        ws.addUserTranscript(turn.text)
-      }
-    }
-  }, [diarized, ws])
 
   const dismissError = useCallback(() => {
     ws.clearError()
