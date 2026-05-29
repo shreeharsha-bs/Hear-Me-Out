@@ -49,12 +49,14 @@ function WaveformBars() {
 
 export function ConversationView({ ws, recorder }: Props) {
   const micClicked = useRef(false)
+  const transcribed = useRef(false)
 
   const startConversation = useCallback(() => {
     ws.clearTranscripts()
     ws.clearResponseChunks()
     ws.clearError()
     micClicked.current = true
+    transcribed.current = false
     ws.connect()
   }, [ws])
 
@@ -74,16 +76,21 @@ export function ConversationView({ ws, recorder }: Props) {
     }
   }, [ws.handshakeReceived, recorder, ws])
 
-  // Transcribe user audio when recording stops
+  // Transcribe user audio when recording stops (once per session)
   useEffect(() => {
-    if (recorder.recordingAvailable && recorder.recordedChunks.length > 0) {
+    if (
+      recorder.recordingAvailable &&
+      recorder.recordedChunks.length > 0 &&
+      !transcribed.current
+    ) {
+      transcribed.current = true
       transcribeRecording(recorder.recordedChunks)
         .then((text) => {
           if (text) ws.addUserTranscript(text)
         })
         .catch((err) => console.error("Transcription failed:", err))
     }
-  }, [recorder.recordingAvailable, recorder.recordedChunks, ws])
+  }, [recorder.recordingAvailable])
 
   const dismissError = useCallback(() => {
     ws.clearError()
