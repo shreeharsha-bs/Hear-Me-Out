@@ -11,14 +11,17 @@ import { Mic, MicOff, ChevronRight, MessageSquareText, AudioLines, AlertCircle }
 import { cn } from "@/lib/utils"
 import type { useRecorder } from "@/hooks/useRecorder"
 import type { useWebSocket } from "@/hooks/useWebSocket"
+import type { useSpeechRecognition } from "@/hooks/useSpeechRecognition"
 import { transcribeRecording } from "@/hooks/useWebSocket"
 
 type WsState = ReturnType<typeof useWebSocket>
 type RecorderState = ReturnType<typeof useRecorder>
+type SpeechState = ReturnType<typeof useSpeechRecognition>
 
 interface Props {
   ws: WsState
   recorder: RecorderState
+  speech: SpeechState
 }
 
 function PipelinePill({ children }: { children: React.ReactNode }) {
@@ -47,7 +50,7 @@ function WaveformBars() {
   )
 }
 
-export function ConversationView({ ws, recorder }: Props) {
+export function ConversationView({ ws, recorder, speech }: Props) {
   const micClicked = useRef(false)
   const transcribed = useRef(false)
 
@@ -62,19 +65,23 @@ export function ConversationView({ ws, recorder }: Props) {
 
   const stopConversation = useCallback(() => {
     recorder.stop()
+    speech.stop()
     ws.disconnect()
     micClicked.current = false
-  }, [recorder, ws])
+  }, [recorder, ws, speech])
 
-  // Start recording when server handshake is received
+  // Start recording and speech recognition when server handshake is received
   useEffect(() => {
     if (ws.handshakeReceived && micClicked.current && !recorder.isRecording) {
       recorder.start().catch(() => {
         ws.disconnect()
         micClicked.current = false
       })
+      speech.start((text) => {
+        ws.addUserTranscript(text)
+      })
     }
-  }, [ws.handshakeReceived, recorder, ws])
+  }, [ws.handshakeReceived, recorder, ws, speech])
 
   // Transcribe user audio when recording stops (once per session)
   useEffect(() => {
@@ -259,7 +266,14 @@ export function ConversationView({ ws, recorder }: Props) {
         {/* Transcript card */}
         <Card className="flex flex-1 flex-col overflow-hidden min-h-0">
           <CardContent className="flex flex-1 flex-col p-0">
-            {!hasMessages && !isWarming ? (
+            {speech.userText ? (
+              <ScrollArea className="flex-1">
+                <p className="p-4 text-sm leading-relaxed text-muted-foreground">
+                  <span className="text-xs text-muted-foreground/60">You: </span>
+                  {speech.userText}
+                </p>
+              </ScrollArea>
+            ) : !hasMessages && !isWarming ? (
               <div className="flex flex-1 flex-col items-center justify-center gap-3 p-4">
                 <WaveformBars />
                 <p className="text-sm font-medium text-muted-foreground">
