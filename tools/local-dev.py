@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Serve Hear-Me-Out frontend locally for development.
-Usage: python3 tools/local-dev.py [--port PORT] [--server-ip IP]
-Opens the frontend with API/WS endpoints pointed to the remote server.
+Usage: python3 tools/local-dev.py [--port PORT]
+
+Server IP and ports are read from .env file in the project root.
+Copy .env.example to .env and fill in your server details.
 """
 
 import http.server
@@ -12,16 +14,37 @@ from pathlib import Path
 from urllib.parse import urlencode
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-FRONTEND_DIR = SCRIPT_DIR.parent / "src" / "frontend"
+PROJECT_DIR = SCRIPT_DIR.parent
+FRONTEND_DIR = PROJECT_DIR / "src" / "frontend"
 
-SERVER_IP = "<redacted>"
+
+def load_dotenv():
+    """Load key=value pairs from .env file."""
+    env_file = PROJECT_DIR / ".env"
+    if not env_file.exists():
+        return {}
+    result = {}
+    with open(env_file) as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if "=" in line:
+                key, _, val = line.partition("=")
+                result[key.strip()] = val.strip().strip('"').strip("'")
+    return result
+
+
+env = load_dotenv()
+SERVER_IP = env.get("SERVER_IP", "localhost")
+API_PORT = env.get("API_PORT", "5001")
+PERSONAPLEX_PORT = env.get("PERSONAPLEX_PORT", "8000")
+MEANVC_PORT = env.get("MEANVC_PORT", "5002")
 PORT = 3000
 
 for i, arg in enumerate(sys.argv[1:], 1):
     if arg == "--port" and i < len(sys.argv) - 1:
         PORT = int(sys.argv[i + 1])
-    elif arg == "--server-ip" and i < len(sys.argv) - 1:
-        SERVER_IP = sys.argv[i + 1]
 
 
 class DevHandler(http.server.SimpleHTTPRequestHandler):
@@ -40,9 +63,10 @@ class DevHandler(http.server.SimpleHTTPRequestHandler):
         self.end_headers()
 
 
+api_base = f"https://{SERVER_IP}:{API_PORT}"
 params = urlencode(
     {
-        "api_base": f"https://{SERVER_IP}:5001",
+        "api_base": api_base,
         "personaplex_host": SERVER_IP,
         "meanvc_host": SERVER_IP,
     }
@@ -52,9 +76,10 @@ url = f"http://localhost:{PORT}/?{params}"
 os.chdir(FRONTEND_DIR)
 server = http.server.HTTPServer(("", PORT), DevHandler)
 print(f"Serving frontend from {FRONTEND_DIR}")
-print(f"API base:  https://{SERVER_IP}:5001")
-print(f"PersonaPlex: wss://{SERVER_IP}:8000/api/chat")
-print(f"MeanVC:    https://{SERVER_IP}:5002")
+print(f"Server:     {SERVER_IP}")
+print(f"API base:   {api_base}")
+print(f"PersonaPlex: wss://{SERVER_IP}:{PERSONAPLEX_PORT}/api/chat")
+print(f"MeanVC:     https://{SERVER_IP}:{MEANVC_PORT}")
 print(f"\nOpen: {url}\n")
 
 try:
