@@ -256,8 +256,8 @@ const App = () => {
       try {
         // Use the local server endpoint to load the default target file
         const fileName = 'tara__chuckle_Hey_I_know_this_is_a_bit_of_a_weird_request_but_laugh_I_really_need_to_get_into_the_server_room_Can_you_let_me_in_.wav';
-        const defaultTargetPath = `/recordings/${fileName}`;
-        const response = await fetch(apiBase + '/' + defaultTargetPath);
+        const defaultTargetPath = `recordings/${fileName}`;
+        const response = await fetch(`${apiBase}/${defaultTargetPath}`);
         
         if (response.ok) {
           const blob = await response.blob();
