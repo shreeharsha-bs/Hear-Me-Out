@@ -86,13 +86,15 @@ export function ConversationView({ ws, recorder }: Props) {
         ws.disconnect()
         micClicked.current = false
       })
-      // Route PersonaPlex audio into merged capture stream
-      ws.setMergedOutput(
-        recorder.mergedContext || null,
-        recorder.mergedDestination || null
-      )
     }
   }, [ws.handshakeReceived, recorder, ws])
+
+  // Route PersonaPlex playback into merged capture once recording starts
+  useEffect(() => {
+    if (recorder.isRecording && recorder.mergedContext && recorder.mergedDestination) {
+      ws.setMergedOutput(recorder.mergedContext, recorder.mergedDestination)
+    }
+  }, [recorder.isRecording, recorder.mergedContext, recorder.mergedDestination, ws])
 
   useEffect(() => {
     if (
