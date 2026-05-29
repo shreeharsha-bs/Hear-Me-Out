@@ -51,6 +51,7 @@ export function ConversationView({ ws, recorder }: Props) {
   const [mergedWavUrl, setMergedWavUrl] = useState<string | null>(null)
   const [playing, setPlaying] = useState(false)
   const [playTime, setPlayTime] = useState(0)
+  const [duration, setDuration] = useState(0)
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const scrollRef = useRef<HTMLDivElement | null>(null)
 
@@ -171,17 +172,45 @@ export function ConversationView({ ws, recorder }: Props) {
     <div className="flex flex-col gap-4 md:grid md:grid-cols-[1fr_280px] md:gap-4 md:h-full pb-2">
       {/* Download bar — outside card */}
       {showResult && (
-        <div className="md:col-span-2 flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-muted/50 px-4 py-2">
-          <span className="text-sm font-medium">Conversation complete</span>
-          <div className="flex flex-wrap items-center gap-2">
-            {mergedWavUrl && (
+        <div className="md:col-span-2 rounded-lg border bg-muted/50 px-4 py-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="text-sm font-medium">Conversation complete</span>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button variant="outline" size="xs" onClick={downloadTranscript}>
+                <Download /> Transcript
+              </Button>
+              {userWavUrl && (
+                <a href={userWavUrl} download="user-recording.wav"
+                  className="inline-flex items-center gap-1 h-6 rounded-lg border px-2 text-[10px] font-medium hover:bg-muted">
+                  You
+                </a>
+              )}
+              {personaplexWavUrl && (
+                <a href={personaplexWavUrl} download="personaplex-response.wav"
+                  className="inline-flex items-center gap-1 h-6 rounded-lg border px-2 text-[10px] font-medium hover:bg-muted">
+                  PP
+                </a>
+              )}
+              {mergedWavUrl && (
+                <a href={mergedWavUrl} download="conversation.wav"
+                  className="inline-flex items-center gap-1 h-6 rounded-lg bg-primary px-2 text-[10px] font-medium text-primary-foreground hover:bg-primary/90">
+                  All
+                </a>
+              )}
+            </div>
+          </div>
+          {(mergedWavUrl || userWavUrl) && (
+            <div className="mt-2 flex items-center gap-2">
               <Button
-                size="xs"
-                variant="outline"
+                size="icon"
+                variant="ghost"
+                className="size-7"
                 onClick={() => {
+                  const src = mergedWavUrl || userWavUrl
                   if (!audioRef.current) {
-                    const a = new Audio(mergedWavUrl)
+                    const a = new Audio(src!)
                     a.ontimeupdate = () => setPlayTime(a.currentTime)
+                    a.onloadedmetadata = () => setDuration(a.duration)
                     a.onended = () => { setPlaying(false); setPlayTime(0) }
                     a.onplay = () => setPlaying(true)
                     a.onpause = () => setPlaying(false)
@@ -190,14 +219,37 @@ export function ConversationView({ ws, recorder }: Props) {
                   } else if (playing) {
                     audioRef.current.pause()
                   } else {
+                    if (audioRef.current.currentTime >= (audioRef.current.duration || 0) - 0.5) {
+                      audioRef.current.currentTime = 0
+                    }
                     audioRef.current.play()
                   }
                 }}
               >
-                {playing ? <Pause /> : <Play />}
-                {playing ? formatTime(playTime) : "Play"}
+                {playing ? <Pause className="size-3.5" /> : <Play className="size-3.5" />}
               </Button>
-            )}
+              <div
+                className="relative flex-1 h-1.5 rounded-full bg-muted-foreground/20 cursor-pointer"
+                onClick={(e) => {
+                  if (!audioRef.current) return
+                  const rect = e.currentTarget.getBoundingClientRect()
+                  const pct = (e.clientX - rect.left) / rect.width
+                  audioRef.current.currentTime = pct * (audioRef.current.duration || 0)
+                  setPlayTime(audioRef.current.currentTime)
+                }}
+              >
+                <div
+                  className="absolute inset-y-0 left-0 rounded-full bg-primary transition-[width] duration-100"
+                  style={{ width: `${duration > 0 ? (playTime / duration) * 100 : 0}%` }}
+                />
+              </div>
+              <span className="text-[10px] text-muted-foreground tabular-nums min-w-[52px] text-right">
+                {formatTime(playTime)} / {formatTime(duration)}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
             <Button variant="outline" size="xs" onClick={downloadTranscript}>
               <Download /> Transcript
             </Button>
