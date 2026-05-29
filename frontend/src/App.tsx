@@ -13,14 +13,14 @@ function App() {
   const [activeTab, setActiveTab] = useState("conversation")
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-6xl flex-col px-4 py-6 sm:px-8 sm:py-8">
-      <header className="mb-6 flex flex-col gap-1 sm:mb-8 sm:flex-row sm:items-baseline sm:gap-3">
+    <div className="mx-auto flex max-w-6xl flex-col px-4 py-4 sm:px-8 sm:py-6 h-screen overflow-hidden">
+      <header className="mb-4 flex flex-col gap-1 sm:flex-row sm:items-baseline sm:gap-3 sm:mb-5">
         <h1 className="text-2xl font-semibold tracking-tight">Hear Me Out</h1>
         <p className="text-sm text-muted-foreground">Speech-to-speech evaluation platform</p>
       </header>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-1 flex-col">
-        <TabsList className="mb-5 w-fit" variant="line">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-1 flex-col min-h-0">
+        <TabsList className="mb-4 w-fit" variant="line">
           <TabsTrigger value="conversation" className="gap-1.5">
             <Mic />Chat
           </TabsTrigger>
@@ -32,7 +32,7 @@ function App() {
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="conversation" className="flex-1">
+        <TabsContent value="conversation" className="flex-1 min-h-0">
           <ConversationView ws={ws} recorder={recorder} />
         </TabsContent>
         <TabsContent value="voice-conversion">
