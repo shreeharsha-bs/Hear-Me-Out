@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge"
 import { Spinner } from "@/components/ui/spinner"
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Mic, MicOff, ChevronRight, MessageSquareText, AlertCircle, Download } from "lucide-react"
+import { Mic, MicOff, ChevronRight, MessageSquareText, AlertCircle, Download, Play, Pause } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { webmToWavBlob, wavBlobToPcm, mergeFloat32s, createWavFile } from "@/lib/audio"
 import type { useRecorder } from "@/hooks/useRecorder"
@@ -49,6 +49,9 @@ export function ConversationView({ ws, recorder }: Props) {
   const [userWavUrl, setUserWavUrl] = useState<string | null>(null)
   const [personaplexWavUrl, setPersonaplexWavUrl] = useState<string | null>(null)
   const [mergedWavUrl, setMergedWavUrl] = useState<string | null>(null)
+  const [playing, setPlaying] = useState(false)
+  const [playTime, setPlayTime] = useState(0)
+  const audioRef = useRef<HTMLAudioElement | null>(null)
 
   const startConversation = useCallback(() => {
     ws.clearTranscripts()
@@ -102,7 +105,11 @@ export function ConversationView({ ws, recorder }: Props) {
           const merged = [...userSegments, ...pplxTurns].sort((a, b) => a.start - b.start)
           setDiarized(merged)
 
-          for (const seg of userSegments) ws.addUserTranscript(seg.text)
+          // Reload transcript window with full diarized transcript
+          ws.clearTranscripts()
+          for (const turn of merged) {
+            if (turn.speaker === "user") ws.addUserTranscript(turn.text)
+          }
 
           if (recorder.recordedChunks.length > 0) {
             const userWav = await webmToWavBlob(recorder.recordedChunks)
@@ -149,30 +156,56 @@ export function ConversationView({ ws, recorder }: Props) {
     <div className="flex flex-col gap-4 md:grid md:grid-cols-[1fr_280px] md:gap-4 md:h-full pb-2">
       {/* Download bar — outside card */}
       {showResult && (
-        <div className="md:col-span-2 flex items-center justify-between rounded-lg border bg-muted/50 px-4 py-2">
+        <div className="md:col-span-2 flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-muted/50 px-4 py-2">
           <span className="text-sm font-medium">Conversation complete</span>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {mergedWavUrl && (
-              <a href={mergedWavUrl} download="conversation.wav"
-                className="inline-flex items-center gap-1 h-6 rounded-lg bg-primary px-2 text-xs font-medium text-primary-foreground hover:bg-primary/90">
-                <Download /> Merged audio
-              </a>
+              <Button
+                size="xs"
+                variant="outline"
+                onClick={() => {
+                  if (!audioRef.current) {
+                    const a = new Audio(mergedWavUrl)
+                    a.ontimeupdate = () => setPlayTime(a.currentTime)
+                    a.onended = () => { setPlaying(false); setPlayTime(0) }
+                    a.onplay = () => setPlaying(true)
+                    a.onpause = () => setPlaying(false)
+                    audioRef.current = a
+                    a.play()
+                  } else if (playing) {
+                    audioRef.current.pause()
+                  } else {
+                    audioRef.current.play()
+                  }
+                }}
+              >
+                {playing ? <Pause /> : <Play />}
+                {playing ? formatTime(playTime) : "Play"}
+              </Button>
             )}
             <Button variant="outline" size="xs" onClick={downloadTranscript}>
               <Download /> Transcript
             </Button>
-            {userWavUrl && (
-              <a href={userWavUrl} download="user-recording.wav"
-                className="inline-flex items-center gap-1 h-6 rounded-lg border px-2 text-xs font-medium hover:bg-muted">
-                Your audio
-              </a>
-            )}
-            {personaplexWavUrl && (
-              <a href={personaplexWavUrl} download="personaplex-response.wav"
-                className="inline-flex items-center gap-1 h-6 rounded-lg border px-2 text-xs font-medium hover:bg-muted">
-                PP audio
-              </a>
-            )}
+            <div className="flex gap-1">
+              {userWavUrl && (
+                <a href={userWavUrl} download="user-recording.wav"
+                  className="inline-flex items-center gap-1 h-6 rounded-lg border px-2 text-[10px] font-medium hover:bg-muted">
+                  You
+                </a>
+              )}
+              {personaplexWavUrl && (
+                <a href={personaplexWavUrl} download="personaplex-response.wav"
+                  className="inline-flex items-center gap-1 h-6 rounded-lg border px-2 text-[10px] font-medium hover:bg-muted">
+                  PP
+                </a>
+              )}
+              {mergedWavUrl && (
+                <a href={mergedWavUrl} download="conversation.wav"
+                  className="inline-flex items-center gap-1 h-6 rounded-lg bg-primary px-2 text-[10px] font-medium text-primary-foreground hover:bg-primary/90">
+                  All
+                </a>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -193,7 +226,7 @@ export function ConversationView({ ws, recorder }: Props) {
             </Alert>
           )}
 
-          {!hasMessages && !isWarming && !hasError && (
+          {!hasMessages && !isWarming && !hasError && !showResult && (
             <div className="flex flex-1 items-center justify-center p-4">
               <Empty className="border-0">
                 <EmptyHeader>
@@ -236,6 +269,31 @@ export function ConversationView({ ws, recorder }: Props) {
                   </div>
                 </div>
               )}
+            </div>
+          )}
+
+          {showResult && diarized && (
+            <div className="p-4">
+              {diarized.map((turn, i) => {
+                const active = playing && playTime >= turn.start && playTime <= turn.end
+                return (
+                  <div key={`d-${i}`} className="mb-2">
+                    <span className={cn(
+                      "mb-0.5 block text-[10px] font-medium",
+                      active ? "text-primary" : "text-muted-foreground/60"
+                    )}>
+                      {turn.speaker === "user" ? "You" : "PersonaPlex"}
+                    </span>
+                    <div className={cn(
+                      "rounded-lg px-3.5 py-2.5 transition-colors",
+                      active ? "ring-2 ring-primary ring-offset-1" : "",
+                      turn.speaker === "user" ? "bg-primary/10" : "bg-muted"
+                    )}>
+                      <p className="text-sm leading-relaxed">{turn.text}</p>
+                    </div>
+                  </div>
+                )
+              })}
             </div>
           )}
         </CardContent>
