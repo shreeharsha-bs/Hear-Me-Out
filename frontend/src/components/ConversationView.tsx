@@ -115,6 +115,7 @@ export function ConversationView({ ws, recorder }: Props) {
             const userWav = await webmToWavBlob(recorder.recordedChunks)
             setUserWavUrl(URL.createObjectURL(userWav))
             const pplxWav = await ws.getPersonaplexWav()
+            console.log("PersonaPlex WAV:", pplxWav ? `${pplxWav.size} bytes` : "null")
             if (pplxWav) {
               setPersonaplexWavUrl(URL.createObjectURL(pplxWav))
               try {
@@ -279,9 +280,12 @@ export function ConversationView({ ws, recorder }: Props) {
                 return (
                   <div key={`d-${i}`} className="mb-2">
                     <span className={cn(
-                      "mb-0.5 block text-[10px] font-medium",
+                      "mb-0.5 flex items-center gap-1.5 text-[10px] font-medium",
                       active ? "text-primary" : "text-muted-foreground/60"
                     )}>
+                      <span className="text-muted-foreground/40 tabular-nums">
+                        {formatTime(turn.start)}
+                      </span>
                       {turn.speaker === "user" ? "You" : "PersonaPlex"}
                     </span>
                     <div className={cn(
