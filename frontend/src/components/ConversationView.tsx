@@ -250,32 +250,6 @@ export function ConversationView({ ws, recorder }: Props) {
           )}
         </div>
       )}
-            <Button variant="outline" size="xs" onClick={downloadTranscript}>
-              <Download /> Transcript
-            </Button>
-            <div className="flex gap-1">
-              {userWavUrl && (
-                <a href={userWavUrl} download="user-recording.wav"
-                  className="inline-flex items-center gap-1 h-6 rounded-lg border px-2 text-[10px] font-medium hover:bg-muted">
-                  You
-                </a>
-              )}
-              {personaplexWavUrl && (
-                <a href={personaplexWavUrl} download="personaplex-response.wav"
-                  className="inline-flex items-center gap-1 h-6 rounded-lg border px-2 text-[10px] font-medium hover:bg-muted">
-                  PP
-                </a>
-              )}
-              {mergedWavUrl && (
-                <a href={mergedWavUrl} download="conversation.wav"
-                  className="inline-flex items-center gap-1 h-6 rounded-lg bg-primary px-2 text-[10px] font-medium text-primary-foreground hover:bg-primary/90">
-                  All
-                </a>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* LEFT: Message feed */}
       <Card className="flex flex-col overflow-hidden h-full py-0">
