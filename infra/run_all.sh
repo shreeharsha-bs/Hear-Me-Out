@@ -70,6 +70,9 @@ else
 fi
 cd "$HEARMEOUT_DIR"
 
+export VC_CHECKPOINT_PATH=/workspace/models/seed-vc/DiT_uvit_tat_xlsr_ema.pth
+export VC_MODEL_CONFIG=configs/presets/config_dit_mel_seed_uvit_xlsr_tiny.yml
+
 echo "=== Starting vc-api (seed-vc, GPU) on port 5001 (SSL) ==="
 python3 -m uvicorn src.app:create_app --factory --host 0.0.0.0 --port 5001 \
     --ssl-keyfile "$SSL_DIR/key.pem" --ssl-certfile "$SSL_DIR/cert.pem" &
@@ -77,7 +80,9 @@ PID2=$!
 
 echo "=== Starting MeanVC (CPU) on port 5002 (SSL) ==="
 export SSL_DIR
-export SPEAKER_VERIFICATION_ROOT="$HEARMEOUT_DIR/.."
+export MEANVC_CKPT_DIR=/workspace/models/meanvc
+export MEANVC_SV_CKPT=/workspace/models/meanvc-sv/wavlm_large_finetune.pth
+export SPEAKER_VERIFICATION_ROOT=/workspace
 python3 infra/meanvc_server.py &
 PID3=$!
 

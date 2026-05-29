@@ -4,9 +4,8 @@
 
 set -e
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-OUTPUT_DIR="${PROJECT_DIR}/models/meanvc-sv"
+WORKSPACE="${WORKSPACE:-/workspace}"
+OUTPUT_DIR="$WORKSPACE/models/meanvc-sv"
 OUTPUT_FILE="${OUTPUT_DIR}/wavlm_large_finetune.pth"
 GDRIVE_ID="1-aE1NfzpRCLxA4GUxX9ITI3F9LlbtEGP"
 

@@ -2,8 +2,8 @@
 # Generate self-signed SSL certificates for development
 # Run this once on the server
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-SSL_DIR="$SCRIPT_DIR/ssl"
+WORKSPACE="${WORKSPACE:-/workspace}"
+SSL_DIR="$WORKSPACE/ssl"
 
 mkdir -p "$SSL_DIR"
 

@@ -1,98 +1,73 @@
 #!/bin/bash
-# Download all models using Docker containers.
-# No host Python/pip needed - just Docker.
-# Models saved to ../models/ which is bind-mounted into compose services.
+# Download all models into /workspace/models/
+# Uses the project venv Python - no Docker needed.
+# Requires: venv at /workspace/hearmeout-venv
+#           HF_TOKEN env var for PersonaPlex (gated model)
 set -e
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-MODELS_DIR="$(cd "$SCRIPT_DIR/.." && pwd)/models"
-SEEDVC_DIR="$MODELS_DIR/seed-vc"
-HF_CACHE_DIR="$MODELS_DIR/hf-cache"
-DOCKER="docker"
+WORKSPACE="${WORKSPACE:-/workspace}"
+VENV_DIR="$WORKSPACE/hearmeout-venv"
+MODELS_DIR="$WORKSPACE/models"
 
-mkdir -p "$SEEDVC_DIR" "$HF_CACHE_DIR"
+source "$VENV_DIR/bin/activate" 2>/dev/null || {
+    echo "ERROR: venv not found at $VENV_DIR. Run setup.sh first."
+    exit 1
+}
 
-# --- PersonaPlex models ---
-echo "=== Downloading PersonaPlex models (nvidia/personaplex-7b-v1) ==="
-PERSONAPLEX_CACHE="$MODELS_DIR/personaplex"
-mkdir -p "$PERSONAPLEX_CACHE"
+mkdir -p "$MODELS_DIR"/{seed-vc,meanvc,meanvc-sv}
 
+echo "=== Downloading PersonaPlex model (nvidia/personaplex-7b-v1) ==="
 if [ -z "$HF_TOKEN" ]; then
-  echo "WARNING: HF_TOKEN not set. PersonaPlex model is gated - accept license at:"
-  echo "  https://huggingface.co/nvidia/personaplex-7b-v1"
-  echo "  Then set HF_TOKEN in .env file and rerun."
+    echo "WARNING: HF_TOKEN not set. PersonaPlex model is gated."
+    echo "  Accept license at: https://huggingface.co/nvidia/personaplex-7b-v1"
+    echo "  Then: export HF_TOKEN=hf_yourtoken && bash infra/download-models.sh"
 else
-  "$DOCKER" run --rm \
-    --security-opt seccomp=unconfined \
-    -v "$PERSONAPLEX_CACHE:/cache" \
-    -e HF_HUB_CACHE=/cache \
-    -e HF_TOKEN="$HF_TOKEN" \
-    python:3.11-slim \
-    sh -c '
-      pip install --no-cache-dir "huggingface_hub>=0.24,<0.25" 1>&2 && \
-      python3 -c "
-from huggingface_hub import hf_hub_download, snapshot_download
-print(\"Downloading PersonaPlex-7B model (this may take a while)...\")
-snapshot_download(\"nvidia/personaplex-7b-v1\")
-print(\"  PersonaPlex model downloaded\")
-print(\"Downloading voice prompts...\")
-hf_hub_download(\"nvidia/personaplex-7b-v1\", \"voices.tgz\")
-print(\"  Voice prompts downloaded\")
-"
-    '
-  echo "  PersonaPlex models done."
-fi
-echo ""
-
-# --- Seed-VC models ---
-echo "=== Downloading Seed-VC models ==="
-# Copy download_models.py into temp context and run in container
-"$DOCKER" run --rm \
-  --security-opt seccomp=unconfined \
-  -v "$SEEDVC_DIR:/out-checkpoints" \
-  -v "$HF_CACHE_DIR:/cache" \
-  -e HF_HUB_CACHE=/cache \
-  python:3.11-slim \
-  sh -c '
-    pip install --no-cache-dir "huggingface_hub==0.24.7" 1>&2 && \
-    pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu 1>&2 && \
-    pip install --no-cache-dir transformers sentence-transformers 1>&2 && \
     python3 -c "
-import logging
-logging.basicConfig(level=logging.INFO)
-
-# Download XLSR speech tokenizer
-from transformers import Wav2Vec2FeatureExtractor, Wav2Vec2Model
-Wav2Vec2Model.from_pretrained(\"facebook/wav2vec2-xls-r-300m\")
-Wav2Vec2FeatureExtractor.from_pretrained(\"facebook/wav2vec2-xls-r-300m\")
-print(\"  Downloaded: facebook/wav2vec2-xls-r-300m\")
-
-# Download Whisper (metrics)
-from transformers import AutoFeatureExtractor, WhisperModel
-WhisperModel.from_pretrained(\"openai/whisper-small\", torch_dtype=\"auto\")
-AutoFeatureExtractor.from_pretrained(\"openai/whisper-small\")
-print(\"  Downloaded: openai/whisper-small\")
-
-# Download sentence-transformers (metrics)
-from sentence_transformers import SentenceTransformer
-SentenceTransformer(\"all-mpnet-base-v2\")
-print(\"  Downloaded: all-mpnet-base-v2\")
-
-# Download CAMPPlus speaker embedding
-from huggingface_hub import hf_hub_download
-hf_hub_download(\"funasr/campplus\", \"campplus_cn_common.bin\")
-print(\"  Downloaded: funasr/campplus/campplus_cn_common.bin\")
-
-# Download HiFiGAN vocoder (default config)
-hf_hub_download(\"FunAudioLLM/CosyVoice-300M\", \"hift.pt\")
-print(\"  Downloaded: FunAudioLLM/CosyVoice-300M/hift.pt\")
-
-print(\"Seed-VC models done.\")
+import os; os.environ['HF_TOKEN']='$HF_TOKEN'
+from huggingface_hub import snapshot_download, hf_hub_download
+print('Downloading PersonaPlex-7B (~14GB)...')
+snapshot_download('nvidia/personaplex-7b-v1')
+hf_hub_download('nvidia/personaplex-7b-v1','voices.tgz')
+print('PersonaPlex model ready.')
 "
-'
+fi
 
 echo ""
-echo "=== Done. Models saved to: ==="
-echo "  PersonaPlex: $MODELS_DIR/personaplex"
-echo "  Seed-VC:     $SEEDVC_DIR"
-echo "  HF cache:    $HF_CACHE_DIR"
+echo "=== Downloading Seed-VC checkpoint ==="
+SEEDVC_CKPT="$MODELS_DIR/seed-vc/DiT_uvit_tat_xlsr_ema.pth"
+if [ -f "$SEEDVC_CKPT" ]; then
+    echo "Seed-VC checkpoint already present."
+else
+    python3 -c "
+from huggingface_hub import hf_hub_download; import shutil
+shutil.copy(hf_hub_download('Plachta/Seed-VC','DiT_uvit_tat_xlsr_ema.pth'),'$SEEDVC_CKPT')
+print('Seed-VC checkpoint ready.')
+"
+fi
+
+echo ""
+echo "=== Downloading MeanVC checkpoints ==="
+for model in meanvc_200ms.pt fastu2++.pt model_200ms.safetensors vocos.pt; do
+    if [ -f "$MODELS_DIR/meanvc/$model" ]; then
+        echo "  $model - present"
+    else
+        echo "  $model - downloading..."
+        python3 -c "
+from huggingface_hub import hf_hub_download; import shutil
+shutil.copy(hf_hub_download('ASLP-lab/MeanVC','$model'),'$MODELS_DIR/meanvc/$model')
+"
+    fi
+done
+echo "MeanVC checkpoints ready."
+
+echo ""
+echo "=== Downloading speaker verification model ==="
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+bash "$SCRIPT_DIR/download-meanvc-sv.sh"
+
+echo ""
+echo "=== All models ready ==="
+echo "  Seed-VC:     $MODELS_DIR/seed-vc"
+echo "  MeanVC:      $MODELS_DIR/meanvc"
+echo "  MeanVC-SV:   $MODELS_DIR/meanvc-sv"
+echo "  PersonaPlex: cached in HF Hub (~/.cache/huggingface)"

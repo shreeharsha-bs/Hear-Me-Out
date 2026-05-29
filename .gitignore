@@ -1,9 +1,7 @@
 .DS_Store
 .env
-tests/.DS_Store
 checkpoints/models*
 checkpoints/.locks/*
 checkpoints/hf_cache*
 tools/__pycache__/
 models/
-infra/ssl/
