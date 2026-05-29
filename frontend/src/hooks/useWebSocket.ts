@@ -26,10 +26,9 @@ interface OggOpusDecoder {
   free(): void;
 }
 
-export async function transcribeRecording(chunks: Blob[]): Promise<string> {
+export async function transcribeRecording(chunks: Blob[]): Promise<{ text: string; segments: { start: number; end: number; text: string }[] }> {
   const blob = new Blob(chunks, { type: "audio/webm" });
   const arrayBuffer = await blob.arrayBuffer();
-  console.log("Transcribing:", blob.size, "bytes from", chunks.length, "chunks");
   const ctx = new AudioContext();
   const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
   ctx.close();
@@ -44,9 +43,7 @@ export async function transcribeRecording(chunks: Blob[]): Promise<string> {
   });
 
   if (!resp.ok) throw new Error(`${resp.status}: ${await resp.text()}`);
-  const data = await resp.json();
-  console.log("Transcription result:", data.text);
-  return data.text || "";
+  return await resp.json();
 }
 
 export function useWebSocket() {
@@ -55,6 +52,8 @@ export function useWebSocket() {
   const decoderRef = useRef<OggOpusDecoder | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const scheduledEnd = useRef(0);
+  const personaplexPcm = useRef<Float32Array[]>([]);
+  const conversationStart = useRef(0);
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [transcripts, setTranscripts] = useState<Transcript[]>([]);
@@ -89,6 +88,7 @@ export function useWebSocket() {
 
     decoder.decode(new Uint8Array(payload)).then(({ channelData, samplesDecoded }) => {
       if (samplesDecoded === 0) return;
+      personaplexPcm.current = [...personaplexPcm.current, new Float32Array(channelData[0])];
       const buffer = ctx.createBuffer(1, samplesDecoded, ctx.sampleRate);
       buffer.copyToChannel(channelData[0], 0);
       const src = ctx.createBufferSource();
@@ -129,7 +129,9 @@ export function useWebSocket() {
           setError(`Connection closed (code ${event.code}). ${event.reason || ""}`.trim());
         }
       }
-      intentionalClose.current = false;
+    personaplexPcm.current = [];
+    conversationStart.current = Date.now();
+    intentionalClose.current = false;
     };
 
     socket.onmessage = async (event) => {
@@ -182,6 +184,8 @@ export function useWebSocket() {
     setWarmupComplete(false);
     setHandshakeReceived(false);
     scheduledEnd.current = 0;
+    personaplexPcm.current = [];
+    conversationStart.current = 0;
   }, []);
 
   useEffect(() => {
@@ -197,8 +201,24 @@ export function useWebSocket() {
     setResponseChunks([]);
   }, []);
 
-  const clearError = useCallback(() => {
-    setError(null);
+  const getPersonaplexWav = useCallback((): Blob | null => {
+    const chunks = personaplexPcm.current;
+    if (chunks.length === 0) return null;
+    const total = chunks.reduce((s, c) => s + c.length, 0);
+    const combined = new Float32Array(total);
+    let offset = 0;
+    for (const c of chunks) {
+      combined.set(c, offset);
+      offset += c.length;
+    }
+    return createWavFile(combined, 48000);
+  }, []);
+
+  const getConversationDuration = useCallback((): number => {
+    const chunks = personaplexPcm.current;
+    if (chunks.length === 0) return 0;
+    const totalSamples = chunks.reduce((s, c) => s + c.length, 0);
+    return totalSamples / 48000;
   }, []);
 
   const addUserTranscript = useCallback((text: string) => {
@@ -221,5 +241,7 @@ export function useWebSocket() {
     clearResponseChunks,
     clearError,
     addUserTranscript,
+    getPersonaplexWav,
+    getConversationDuration,
   };
 }

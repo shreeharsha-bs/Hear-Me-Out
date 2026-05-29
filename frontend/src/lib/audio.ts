@@ -45,3 +45,27 @@ export function createWavFile(audioData: Float32Array, sampleRate: number): Blob
 
   return new Blob([buffer], { type: "audio/wav" });
 }
+
+export async function webmToWavBlob(chunks: Blob[]): Promise<Blob> {
+  const blob = new Blob(chunks, { type: "audio/webm" });
+  const arrayBuffer = await blob.arrayBuffer();
+  const ctx = new AudioContext();
+  const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
+  ctx.close();
+  return createWavFile(audioBuffer.getChannelData(0), audioBuffer.sampleRate);
+}
+
+export function mergeAudioBlobs(blobs: Blob[]): Blob {
+  return new Blob(blobs, { type: "audio/wav" });
+}
+
+export function concatFloat32Arrays(arrays: Float32Array[]): Float32Array {
+  const total = arrays.reduce((s, a) => s + a.length, 0);
+  const merged = new Float32Array(total);
+  let offset = 0;
+  for (const a of arrays) {
+    merged.set(a, offset);
+    offset += a.length;
+  }
+  return merged;
+}

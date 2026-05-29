@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -7,21 +7,26 @@ import { Badge } from "@/components/ui/badge"
 import { Spinner } from "@/components/ui/spinner"
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Mic, MicOff, ChevronRight, MessageSquareText, AudioLines, AlertCircle } from "lucide-react"
+import { Mic, MicOff, ChevronRight, MessageSquareText, AudioLines, AlertCircle, Download } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { webmToWavBlob } from "@/lib/audio"
 import type { useRecorder } from "@/hooks/useRecorder"
 import type { useWebSocket } from "@/hooks/useWebSocket"
-import type { useSpeechRecognition } from "@/hooks/useSpeechRecognition"
 import { transcribeRecording } from "@/hooks/useWebSocket"
 
 type WsState = ReturnType<typeof useWebSocket>
 type RecorderState = ReturnType<typeof useRecorder>
-type SpeechState = ReturnType<typeof useSpeechRecognition>
 
 interface Props {
   ws: WsState
   recorder: RecorderState
-  speech: SpeechState
+}
+
+interface DiarizedTurn {
+  speaker: "user" | "personaplex"
+  text: string
+  start: number
+  end: number
 }
 
 function PipelinePill({ children }: { children: React.ReactNode }) {
@@ -50,9 +55,18 @@ function WaveformBars() {
   )
 }
 
-export function ConversationView({ ws, recorder, speech }: Props) {
+function formatTime(seconds: number): string {
+  const m = Math.floor(seconds / 60)
+  const s = Math.floor(seconds % 60)
+  return `${m}:${s.toString().padStart(2, "0")}`
+}
+
+export function ConversationView({ ws, recorder }: Props) {
   const micClicked = useRef(false)
   const transcribed = useRef(false)
+  const [diarized, setDiarized] = useState<DiarizedTurn[] | null>(null)
+  const [userWavUrl, setUserWavUrl] = useState<string | null>(null)
+  const [personaplexWavUrl, setPersonaplexWavUrl] = useState<string | null>(null)
 
   const startConversation = useCallback(() => {
     ws.clearTranscripts()
@@ -60,30 +74,28 @@ export function ConversationView({ ws, recorder, speech }: Props) {
     ws.clearError()
     micClicked.current = true
     transcribed.current = false
+    setDiarized(null)
+    setUserWavUrl(null)
+    setPersonaplexWavUrl(null)
     ws.connect()
   }, [ws])
 
   const stopConversation = useCallback(() => {
     recorder.stop()
-    speech.stop()
     ws.disconnect()
     micClicked.current = false
-  }, [recorder, ws, speech])
+  }, [recorder, ws])
 
-  // Start recording and speech recognition when server handshake is received
   useEffect(() => {
     if (ws.handshakeReceived && micClicked.current && !recorder.isRecording) {
       recorder.start().catch(() => {
         ws.disconnect()
         micClicked.current = false
       })
-      speech.start((text) => {
-        ws.addUserTranscript(text)
-      })
     }
-  }, [ws.handshakeReceived, recorder, ws, speech])
+  }, [ws.handshakeReceived, recorder, ws])
 
-  // Transcribe user audio when recording stops (once per session)
+  // On stop: transcribe user audio, merge with PersonaPlex, create diarized output
   useEffect(() => {
     if (
       recorder.recordingAvailable &&
@@ -91,22 +103,87 @@ export function ConversationView({ ws, recorder, speech }: Props) {
       !transcribed.current
     ) {
       transcribed.current = true
-      transcribeRecording(recorder.recordedChunks)
-        .then((text) => {
-          if (text) ws.addUserTranscript(text)
-        })
-        .catch((err) => console.error("Transcription failed:", err))
+      ;(async () => {
+        try {
+          // Transcribe user audio
+          const result = await transcribeRecording(recorder.recordedChunks)
+          const userSegments: DiarizedTurn[] = (result.segments || []).map(
+            (s: { start: number; end: number; text: string }) => ({
+              speaker: "user" as const,
+              text: s.text,
+              start: s.start,
+              end: s.end,
+            })
+          )
+
+          // PersonaPlex turns (estimate timestamps from conversation timeline)
+          const convStart = ws.transcripts[0]?.timestamp ?? Date.now()
+          const pplxTurns: DiarizedTurn[] = ws.transcripts.map((t, i, arr) => {
+            const prevEnd = i > 0 ? (arr[i - 1].timestamp - convStart) / 1000 : 0
+            const start = Math.max(prevEnd, (t.timestamp - convStart) / 1000 - 2)
+            return {
+              speaker: "personaplex" as const,
+              text: t.text,
+              start,
+              end: start + 2,
+            }
+          })
+
+          // Merge and sort by start time
+          const merged = [...userSegments, ...pplxTurns].sort(
+            (a, b) => a.start - b.start
+          )
+          setDiarized(merged)
+
+          // Create audio download URLs
+          if (recorder.recordedChunks.length > 0) {
+            const wav = await webmToWavBlob(recorder.recordedChunks)
+            setUserWavUrl(URL.createObjectURL(wav))
+          }
+          const pplxWav = ws.getPersonaplexWav()
+          if (pplxWav) {
+            setPersonaplexWavUrl(URL.createObjectURL(pplxWav))
+          }
+        } catch (err) {
+          console.error("Transcription failed:", err)
+        }
+      })()
     }
   }, [recorder.recordingAvailable])
+
+  // Add user segments to transcripts for display
+  useEffect(() => {
+    if (diarized) {
+      const userTurns = diarized.filter((t) => t.speaker === "user" && t.text)
+      for (const turn of userTurns) {
+        ws.addUserTranscript(turn.text)
+      }
+    }
+  }, [diarized, ws])
 
   const dismissError = useCallback(() => {
     ws.clearError()
   }, [ws])
 
+  const downloadTranscript = useCallback(() => {
+    if (!diarized) return
+    const lines = diarized.map(
+      (t) => `[${formatTime(t.start)}-${formatTime(t.end)}] ${t.speaker === "user" ? "You" : "PersonaPlex"}: ${t.text}`
+    )
+    const blob = new Blob([lines.join("\n")], { type: "text/plain" })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = "transcript.txt"
+    a.click()
+    URL.revokeObjectURL(url)
+  }, [diarized])
+
   const isConnected = ws.connected
   const isWarming = isConnected && !ws.warmupComplete
   const hasMessages = ws.transcripts.length > 0 || !!ws.partialTranscript
   const hasError = !!ws.error
+  const showResult = diarized !== null && !isConnected
 
   return (
     <div className="grid grid-cols-1 gap-5 md:grid-cols-[1fr_320px] md:h-[calc(100vh-140px)]">
@@ -119,12 +196,7 @@ export function ConversationView({ ws, recorder, speech }: Props) {
               <div className="flex flex-1 flex-col gap-1">
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-medium">Connection failed</span>
-                  <Button
-                    variant="ghost"
-                    size="xs"
-                    onClick={dismissError}
-                    className="h-auto px-2 py-0.5 text-xs"
-                  >
+                  <Button variant="ghost" size="xs" onClick={dismissError} className="h-auto px-2 py-0.5 text-xs">
                     Dismiss
                   </Button>
                 </div>
@@ -133,7 +205,7 @@ export function ConversationView({ ws, recorder, speech }: Props) {
             </Alert>
           )}
 
-          {!hasMessages && !isWarming && !hasError && (
+          {!hasMessages && !isWarming && !hasError && !showResult && (
             <div className="flex flex-1 items-center justify-center p-6">
               <Empty className="border-0">
                 <EmptyHeader>
@@ -188,12 +260,42 @@ export function ConversationView({ ws, recorder, speech }: Props) {
               </div>
             </ScrollArea>
           )}
+
+          {showResult && (
+            <div className="flex flex-col gap-2 p-5">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium">Conversation complete</span>
+                <div className="flex gap-2">
+                  <Button variant="outline" size="xs" onClick={downloadTranscript}>
+                    <Download />Transcript
+                  </Button>
+                  {userWavUrl && (
+                    <a
+                      href={userWavUrl}
+                      download="user-recording.wav"
+                      className="inline-flex items-center gap-1 h-6 rounded-lg border px-2 text-xs font-medium hover:bg-muted"
+                    >
+                      <Download />Your audio
+                    </a>
+                  )}
+                  {personaplexWavUrl && (
+                    <a
+                      href={personaplexWavUrl}
+                      download="personaplex-response.wav"
+                      className="inline-flex items-center gap-1 h-6 rounded-lg border px-2 text-xs font-medium hover:bg-muted"
+                    >
+                      <Download />PP audio
+                    </a>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 
       {/* RIGHT: Controls column */}
       <div className="flex flex-col gap-4 order-first md:order-none">
-        {/* Mic card */}
         <Card>
           <CardContent className="flex flex-col items-center gap-4 px-5 py-5">
             <div className="relative">
@@ -263,17 +365,9 @@ export function ConversationView({ ws, recorder, speech }: Props) {
           </CardContent>
         </Card>
 
-        {/* Transcript card */}
         <Card className="flex flex-1 flex-col overflow-hidden min-h-0">
           <CardContent className="flex flex-1 flex-col p-0">
-            {speech.userText ? (
-              <ScrollArea className="flex-1">
-                <p className="p-4 text-sm leading-relaxed text-muted-foreground">
-                  <span className="text-xs text-muted-foreground/60">You: </span>
-                  {speech.userText}
-                </p>
-              </ScrollArea>
-            ) : !hasMessages && !isWarming ? (
+            {!hasMessages && !isWarming ? (
               <div className="flex flex-1 flex-col items-center justify-center gap-3 p-4">
                 <WaveformBars />
                 <p className="text-sm font-medium text-muted-foreground">

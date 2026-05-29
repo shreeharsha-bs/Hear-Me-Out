@@ -5,13 +5,11 @@ import { VoiceConversion } from "@/components/VoiceConversion"
 import { MetricsComparison } from "@/components/MetricsComparison"
 import { useRecorder } from "@/hooks/useRecorder"
 import { useWebSocket } from "@/hooks/useWebSocket"
-import { useSpeechRecognition } from "@/hooks/useSpeechRecognition"
 import { Mic, GitCompare, Wand2 } from "lucide-react"
 
 function App() {
   const ws = useWebSocket()
   const recorder = useRecorder((data) => ws.sendAudio(data))
-  const speech = useSpeechRecognition()
   const [activeTab, setActiveTab] = useState("conversation")
 
   return (
@@ -35,7 +33,7 @@ function App() {
         </TabsList>
 
         <TabsContent value="conversation" className="flex-1">
-          <ConversationView ws={ws} recorder={recorder} speech={speech} />
+          <ConversationView ws={ws} recorder={recorder} />
         </TabsContent>
         <TabsContent value="voice-conversion">
           <div className="mx-auto max-w-lg">

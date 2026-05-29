@@ -94,9 +94,19 @@ def create_app():
             temp_path = f.name
 
         try:
-            segments, _ = whisper_model.transcribe(temp_path, beam_size=1)
-            text = " ".join(s.text.strip() for s in segments if s.text.strip())
-            return JSONResponse({"text": text})
+            segments_result, _ = whisper_model.transcribe(temp_path, beam_size=1)
+            segments = []
+            for s in segments_result:
+                if s.text.strip():
+                    segments.append(
+                        {
+                            "start": round(s.start, 2),
+                            "end": round(s.end, 2),
+                            "text": s.text.strip(),
+                        }
+                    )
+            text = " ".join(s["text"] for s in segments)
+            return JSONResponse({"text": text, "segments": segments})
         finally:
             os.unlink(temp_path)
 
