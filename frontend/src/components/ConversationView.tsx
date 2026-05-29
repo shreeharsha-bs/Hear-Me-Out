@@ -225,9 +225,45 @@ export function ConversationView({ ws, recorder }: Props) {
             </div>
           )}
 
-          {hasMessages && !isWarming && (
+          {(hasMessages || true) && !isWarming && (
             <div className="flex-1 overflow-y-auto">
               <div className="flex flex-col gap-2.5 p-5">
+                {/* --- TEMP: test messages for scroll --- */}
+                {[
+                  ["PersonaPlex", "Hi there! Welcome to Hear Me Out."],
+                  ["You", "Hello! How does this work?"],
+                  ["PersonaPlex", "Tap the mic to start speaking."],
+                  ["You", "What can we talk about?"],
+                  ["PersonaPlex", "Anything! Tech, life, weather."],
+                  ["You", "How's the weather?"],
+                  ["PersonaPlex", "Always partly digital."],
+                  ["You", "Fair enough haha."],
+                  ["PersonaPlex", "Testing scroll #9."],
+                  ["You", "Testing scroll #10."],
+                  ["PersonaPlex", "Testing scroll #11."],
+                  ["You", "Testing scroll #12."],
+                  ["PersonaPlex", "Testing scroll #13."],
+                  ["You", "Testing scroll #14."],
+                  ["PersonaPlex", "Testing scroll #15."],
+                  ["You", "Testing scroll #16."],
+                  ["PersonaPlex", "Testing scroll #17."],
+                  ["You", "Testing scroll #18."],
+                  ["PersonaPlex", "Testing scroll #19."],
+                  ["You", "Testing scroll #20 — works!"],
+                ].map(([label, text], i) => (
+                  <div key={`test-${i}`}>
+                    <span className="mb-0.5 block text-[10px] font-medium text-muted-foreground/60">
+                      {label}
+                    </span>
+                    <div className={cn(
+                      "rounded-lg px-3.5 py-2.5",
+                      label === "You" ? "bg-primary/10" : "bg-muted"
+                    )}>
+                      <p className="text-sm leading-relaxed">{text}</p>
+                    </div>
+                  </div>
+                ))}
+                {/* --- END TEMP --- */}
                 {ws.transcripts.map((t, i) => (
                   <div key={i}>
                     <span className="mb-0.5 block text-[10px] font-medium text-muted-foreground/60">
