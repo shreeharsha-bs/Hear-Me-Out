@@ -19,15 +19,15 @@ function App() {
         <p className="text-sm text-muted-foreground">Speech-to-speech evaluation platform</p>
       </header>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-1 flex-col min-h-0 pb-1">
-        <TabsList className="mb-4 w-fit" variant="line">
-          <TabsTrigger value="conversation" className="gap-1.5">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-1 flex-col min-h-0">
+        <TabsList className="mb-4 w-fit border-b" variant="default">
+          <TabsTrigger value="conversation" className="gap-1.5 data-[active]:border-b-2 data-[active]:border-foreground data-[active]:mb-[-2px]">
             <Mic />Chat
           </TabsTrigger>
-          <TabsTrigger value="voice-conversion" className="gap-1.5">
+          <TabsTrigger value="voice-conversion" className="gap-1.5 data-[active]:border-b-2 data-[active]:border-foreground data-[active]:mb-[-2px]">
             <Wand2 />Convert
           </TabsTrigger>
-          <TabsTrigger value="metrics" className="gap-1.5">
+          <TabsTrigger value="metrics" className="gap-1.5 data-[active]:border-b-2 data-[active]:border-foreground data-[active]:mb-[-2px]">
             <GitCompare />Metrics
           </TabsTrigger>
         </TabsList>
