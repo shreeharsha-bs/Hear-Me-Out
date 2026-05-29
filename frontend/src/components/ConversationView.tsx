@@ -129,13 +129,8 @@ export function ConversationView({ ws, recorder }: Props) {
               try {
                 const userPcm = await wavBlobToPcm(userWav)
                 const pplxPcm = await wavBlobToPcm(pplxWav)
-                const pplxStart = ws.getPersonaplexStartTime()
-                // Align by timeline: user at t=0, silence gap, then PersonaPlex
-                const userDuration = userPcm.length / 48000
-                const gapDuration = Math.max(0, pplxStart - userDuration)
-                const gapSamples = Math.floor(gapDuration * 48000)
-                const silence = new Float32Array(gapSamples > 0 ? gapSamples : 0)
-                const merged = createWavFile(mergeFloat32s([userPcm, silence, pplxPcm]), 48000)
+                // Simple concatenation: user voice, then PersonaPlex response
+                const merged = createWavFile(mergeFloat32s([userPcm, pplxPcm]), 48000)
                 setMergedWavUrl(URL.createObjectURL(merged))
               } catch (e) { console.error("Merge failed:", e) }
             }
