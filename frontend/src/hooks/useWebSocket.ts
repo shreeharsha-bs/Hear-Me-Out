@@ -221,6 +221,10 @@ export function useWebSocket() {
     return totalSamples / 48000;
   }, []);
 
+  const clearError = useCallback(() => {
+    setError(null);
+  }, []);
+
   const addUserTranscript = useCallback((text: string) => {
     if (!text) return;
     setTranscripts((prev) => [...prev, { text, timestamp: Date.now(), speaker: "user" }]);
