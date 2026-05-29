@@ -227,7 +227,8 @@ export function ConversationView({ ws, recorder }: Props) {
 
       {/* LEFT: Message feed */}
       <Card className="flex flex-col overflow-hidden h-full py-0">
-        <CardContent className="flex flex-1 flex-col p-0 overflow-y-auto" role="status" aria-live="polite" ref={scrollRef}>
+        <CardContent className="flex flex-1 flex-col p-0 overflow-y-auto" role="status" aria-live="polite">
+          <div ref={scrollRef}>
           {hasError && (
             <Alert variant="destructive" className="m-3">
               <AlertCircle />
@@ -314,6 +315,7 @@ export function ConversationView({ ws, recorder }: Props) {
               })}
             </div>
           )}
+          </div>
         </CardContent>
       </Card>
 
