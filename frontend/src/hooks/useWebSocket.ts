@@ -203,6 +203,7 @@ export function useWebSocket() {
 
   const getPersonaplexWav = useCallback(async (): Promise<Blob | null> => {
     const packets = personaplexOpus.current;
+    console.log("getPersonaplexWav:", packets.length, "packets, decoder:", !!decoderRef.current);
     if (packets.length === 0) return null;
     const decoder = decoderRef.current;
     if (!decoder) return null;
