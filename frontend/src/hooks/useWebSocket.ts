@@ -107,6 +107,8 @@ export function useWebSocket() {
     const url = getPersonaplexWsURL();
     console.log("Connecting to:", url);
     setError(null);
+    personaplexOpus.current = [];
+    conversationStart.current = Date.now();
     intentionalClose.current = false;
 
     const socket = new WebSocket(url);
@@ -131,9 +133,7 @@ export function useWebSocket() {
           setError(`Connection closed (code ${event.code}). ${event.reason || ""}`.trim());
         }
       }
-    personaplexOpus.current = [];
-    conversationStart.current = Date.now();
-    intentionalClose.current = false;
+      intentionalClose.current = false;
     };
 
     socket.onmessage = async (event) => {
