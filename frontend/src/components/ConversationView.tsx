@@ -136,7 +136,7 @@ export function ConversationView({ ws, recorder }: Props) {
   const showResult = diarized !== null && !isConnected
 
   return (
-    <div className="flex flex-col gap-4 md:grid md:grid-cols-[1fr_320px] md:gap-5 md:h-full md:overflow-hidden">
+    <div className="flex flex-col gap-4 md:grid md:grid-cols-[1fr_260px] md:gap-4 md:h-full md:overflow-hidden">
       {/* Download bar — outside card */}
       {showResult && (
         <div className="md:col-span-2 flex items-center justify-between rounded-lg border bg-muted/50 px-4 py-2">
@@ -228,19 +228,19 @@ export function ConversationView({ ws, recorder }: Props) {
       {/* RIGHT: Controls column */}
       <div className="flex flex-col gap-4 order-first md:order-none">
         <Card>
-          <CardContent className="flex flex-col items-center gap-4 px-5 py-5">
+          <CardContent className="flex flex-col items-center gap-3 px-4 py-4">
             <div className="relative">
               {isConnected && (
-                <div className="animate-pulse absolute inset-0 -m-2 rounded-full pointer-events-none shadow-[0_0_0_8px_rgba(239,68,68,0.15)]" />
+                <div className="animate-pulse absolute inset-0 -m-1.5 rounded-full pointer-events-none shadow-[0_0_0_6px_rgba(239,68,68,0.15)]" />
               )}
               {hasError && !isConnected && (
-                <div className="animate-pulse absolute inset-0 -m-2 rounded-full pointer-events-none shadow-[0_0_0_8px_rgba(239,68,68,0.12)]" />
+                <div className="animate-pulse absolute inset-0 -m-1.5 rounded-full pointer-events-none shadow-[0_0_0_6px_rgba(239,68,68,0.12)]" />
               )}
               <Button
                 variant={isConnected ? "destructive" : hasError ? "destructive" : "default"}
                 onClick={isConnected ? stopConversation : startConversation}
                 disabled={isWarming}
-                className={cn("size-14 rounded-full", isConnected && "bg-red-500 hover:bg-red-600 text-white border-0", !isConnected && !hasError && !isWarming && "shadow-md shadow-primary/20")}
+                className={cn("size-12 rounded-full", isConnected && "bg-red-500 hover:bg-red-600 text-white border-0", !isConnected && !hasError && !isWarming && "shadow-md shadow-primary/20")}
                 aria-label={isConnected ? "Stop recording" : "Start recording"}
               >
                 {isWarming ? <Spinner className="text-primary-foreground" /> : isConnected ? <MicOff /> : <Mic />}
@@ -249,32 +249,32 @@ export function ConversationView({ ws, recorder }: Props) {
 
             {isConnected && !isWarming && (
               <div className="flex flex-col items-center gap-0.5 text-center">
-                <p className="text-sm font-medium text-destructive">Recording…</p>
-                <p className="text-xs text-muted-foreground">Tap to stop</p>
+                <p className="text-xs font-medium text-destructive">Recording…</p>
+                <p className="text-[11px] text-muted-foreground">Tap to stop</p>
               </div>
             )}
             {isWarming && (
               <div className="flex flex-col items-center gap-0.5 text-center">
-                <p className="text-sm font-medium">Connecting…</p>
-                <p className="text-xs text-muted-foreground">Loading model</p>
+                <p className="text-xs font-medium">Connecting…</p>
+                <p className="text-[11px] text-muted-foreground">Loading model</p>
               </div>
             )}
             {!isConnected && (
               <div className="flex flex-col items-center gap-0.5 text-center">
-                <p className="text-sm font-medium">{hasError ? "Connection error" : "Tap to start"}</p>
-                <p className="text-xs text-muted-foreground">{hasError ? "Tap to retry" : "Press to begin"}</p>
+                <p className="text-xs font-medium">{hasError ? "Connection error" : "Tap to start"}</p>
+                <p className="text-[11px] text-muted-foreground">{hasError ? "Tap to retry" : "Press to begin"}</p>
               </div>
             )}
 
-            <div className="flex flex-wrap items-center justify-center gap-1.5">
+            <div className="flex flex-wrap items-center justify-center gap-1">
               <PipelinePill>Your voice</PipelinePill>
-              <ChevronRight className="size-3 text-muted-foreground/50" />
+              <ChevronRight className="size-2.5 text-muted-foreground/50" />
               <PipelinePill>PersonaPlex</PipelinePill>
-              <ChevronRight className="size-3 text-muted-foreground/50" />
+              <ChevronRight className="size-2.5 text-muted-foreground/50" />
               <PipelinePill>Response</PipelinePill>
             </div>
 
-            <Badge variant={hasError ? "destructive" : isConnected ? "default" : "secondary"}>
+            <Badge variant={hasError ? "destructive" : isConnected ? "default" : "secondary"} className="text-[10px]">
               {hasError ? "Error" : isConnected ? "Connected" : "Ready"}
             </Badge>
           </CardContent>
