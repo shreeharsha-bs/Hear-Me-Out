@@ -20,14 +20,14 @@ function App() {
       </header>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-1 flex-col min-h-0">
-        <TabsList className="mb-4 w-fit border-b" variant="default">
-          <TabsTrigger value="conversation" className="gap-1.5 data-[active]:border-b-2 data-[active]:border-foreground data-[active]:mb-[-2px]">
+        <TabsList className="mb-4 w-full !flex !flex-row">
+          <TabsTrigger value="conversation" className="flex-1 gap-1.5 rounded-md">
             <Mic />Chat
           </TabsTrigger>
-          <TabsTrigger value="voice-conversion" className="gap-1.5 data-[active]:border-b-2 data-[active]:border-foreground data-[active]:mb-[-2px]">
+          <TabsTrigger value="voice-conversion" className="flex-1 gap-1.5 rounded-md">
             <Wand2 />Convert
           </TabsTrigger>
-          <TabsTrigger value="metrics" className="gap-1.5 data-[active]:border-b-2 data-[active]:border-foreground data-[active]:mb-[-2px]">
+          <TabsTrigger value="metrics" className="flex-1 gap-1.5 rounded-md">
             <GitCompare />Metrics
           </TabsTrigger>
         </TabsList>
