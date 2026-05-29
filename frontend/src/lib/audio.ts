@@ -69,5 +69,12 @@ export async function wavBlobToPcm(blob: Blob): Promise<Float32Array> {
 }
 
 export function mergeFloat32s(arrays: Float32Array[]): Float32Array {
-  return concatFloat32Arrays(arrays);
+  const total = arrays.reduce((s, a) => s + a.length, 0);
+  const merged = new Float32Array(total);
+  let offset = 0;
+  for (const a of arrays) {
+    merged.set(a, offset);
+    offset += a.length;
+  }
+  return merged;
 }
