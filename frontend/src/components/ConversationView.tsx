@@ -78,8 +78,10 @@ export function ConversationView({ ws, recorder }: Props) {
   useEffect(() => {
     if (recorder.recordingAvailable && recorder.recordedChunks.length > 0) {
       transcribeRecording(recorder.recordedChunks)
-        .then((text) => ws.addUserTranscript(text))
-        .catch(() => {})
+        .then((text) => {
+          if (text) ws.addUserTranscript(text)
+        })
+        .catch((err) => console.error("Transcription failed:", err))
     }
   }, [recorder.recordingAvailable, recorder.recordedChunks, ws])
 

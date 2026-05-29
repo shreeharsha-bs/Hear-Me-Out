@@ -29,6 +29,7 @@ interface OggOpusDecoder {
 export async function transcribeRecording(chunks: Blob[]): Promise<string> {
   const blob = new Blob(chunks, { type: "audio/webm" });
   const arrayBuffer = await blob.arrayBuffer();
+  console.log("Transcribing:", blob.size, "bytes from", chunks.length, "chunks");
   const ctx = new AudioContext();
   const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
   ctx.close();
@@ -42,8 +43,9 @@ export async function transcribeRecording(chunks: Blob[]): Promise<string> {
     body: formData,
   });
 
-  if (!resp.ok) throw new Error(await resp.text());
+  if (!resp.ok) throw new Error(`${resp.status}: ${await resp.text()}`);
   const data = await resp.json();
+  console.log("Transcription result:", data.text);
   return data.text || "";
 }
 
