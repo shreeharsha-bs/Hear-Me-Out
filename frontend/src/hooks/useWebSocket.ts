@@ -52,7 +52,7 @@ export function useWebSocket() {
   const decoderRef = useRef<OggOpusDecoder | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const scheduledEnd = useRef(0);
-  const personaplexOpus = useRef<Uint8Array[]>([]);
+  const personaplexOpus = useRef<{ packet: Uint8Array; time: number }[]>([]);
   const conversationStart = useRef(0);
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -87,7 +87,7 @@ export function useWebSocket() {
     if (!decoder || !ctx) return;
 
     const raw = new Uint8Array(payload);
-    personaplexOpus.current = [...personaplexOpus.current, raw];
+    personaplexOpus.current = [...personaplexOpus.current, { packet: raw, time: Date.now() }];
 
     decoder.decode(raw).then(({ channelData, samplesDecoded }) => {
       if (samplesDecoded === 0) return;
@@ -209,7 +209,7 @@ export function useWebSocket() {
     if (!decoder) return null;
 
     const allPcm: Float32Array[] = [];
-    for (const packet of packets) {
+    for (const { packet } of packets) {
       try {
         const { channelData, samplesDecoded } = await decoder.decode(packet);
         if (samplesDecoded > 0) allPcm.push(new Float32Array(channelData[0]));
@@ -225,6 +225,11 @@ export function useWebSocket() {
       offset += c.length;
     }
     return createWavFile(combined, 48000);
+  }, []);
+
+  const getPersonaplexStartTime = useCallback((): number => {
+    if (personaplexOpus.current.length === 0) return 0;
+    return (personaplexOpus.current[0].time - conversationStart.current) / 1000;
   }, []);
 
   const getConversationDuration = useCallback((): number => {
@@ -257,6 +262,7 @@ export function useWebSocket() {
     clearError,
     addUserTranscript,
     getPersonaplexWav,
+    getPersonaplexStartTime,
     getConversationDuration,
   };
 }

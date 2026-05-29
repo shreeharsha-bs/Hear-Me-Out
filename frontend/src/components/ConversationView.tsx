@@ -52,6 +52,14 @@ export function ConversationView({ ws, recorder }: Props) {
   const [playing, setPlaying] = useState(false)
   const [playTime, setPlayTime] = useState(0)
   const audioRef = useRef<HTMLAudioElement | null>(null)
+  const scrollRef = useRef<HTMLDivElement | null>(null)
+
+  // Auto-scroll to active turn during playback
+  useEffect(() => {
+    if (!playing || !scrollRef.current) return
+    const el = scrollRef.current.querySelector("[data-active-turn]")
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "nearest" })
+  }, [playTime, playing])
 
   const startConversation = useCallback(() => {
     ws.clearTranscripts()
@@ -121,7 +129,13 @@ export function ConversationView({ ws, recorder }: Props) {
               try {
                 const userPcm = await wavBlobToPcm(userWav)
                 const pplxPcm = await wavBlobToPcm(pplxWav)
-                const merged = createWavFile(mergeFloat32s([userPcm, pplxPcm]), 48000)
+                const pplxStart = ws.getPersonaplexStartTime()
+                // Align by timeline: user at t=0, silence gap, then PersonaPlex
+                const userDuration = userPcm.length / 48000
+                const gapDuration = Math.max(0, pplxStart - userDuration)
+                const gapSamples = Math.floor(gapDuration * 48000)
+                const silence = new Float32Array(gapSamples > 0 ? gapSamples : 0)
+                const merged = createWavFile(mergeFloat32s([userPcm, silence, pplxPcm]), 48000)
                 setMergedWavUrl(URL.createObjectURL(merged))
               } catch (e) { console.error("Merge failed:", e) }
             }
@@ -213,7 +227,7 @@ export function ConversationView({ ws, recorder }: Props) {
 
       {/* LEFT: Message feed */}
       <Card className="flex flex-col overflow-hidden h-full py-0">
-        <CardContent className="flex flex-1 flex-col p-0 overflow-y-auto" role="status" aria-live="polite">
+        <CardContent className="flex flex-1 flex-col p-0 overflow-y-auto" role="status" aria-live="polite" ref={scrollRef}>
           {hasError && (
             <Alert variant="destructive" className="m-3">
               <AlertCircle />
@@ -278,7 +292,7 @@ export function ConversationView({ ws, recorder }: Props) {
               {diarized.map((turn, i) => {
                 const active = playing && playTime >= turn.start && playTime <= turn.end
                 return (
-                  <div key={`d-${i}`} className="mb-2">
+                  <div key={`d-${i}`} className="mb-2" data-active-turn={active ? "" : undefined}>
                     <span className={cn(
                       "mb-0.5 flex items-center gap-1.5 text-[10px] font-medium",
                       active ? "text-primary" : "text-muted-foreground/60"
