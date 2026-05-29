@@ -1,9 +1,6 @@
 .DS_Store
 .env
-src/__pycache__/app.cpython-312.pyc
 tests/.DS_Store
-src/__pycache__/moshi.cpython-312.pyc
-src/__pycache__/common.cpython-312.pyc
 checkpoints/models*
 checkpoints/.locks/*
 checkpoints/hf_cache*
