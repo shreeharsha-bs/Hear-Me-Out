@@ -182,10 +182,10 @@ export function ConversationView({ ws, recorder }: Props) {
           <CardContent className="flex flex-col items-center gap-4 px-5 py-5">
             <div className="relative">
               {isConnected && (
-                <div className="animate-pulse absolute inset-0 -m-2 rounded-full shadow-[0_0_0_8px_rgba(239,68,68,0.15)]" />
+                <div className="animate-pulse absolute inset-0 -m-2 rounded-full pointer-events-none shadow-[0_0_0_8px_rgba(239,68,68,0.15)]" />
               )}
               {hasError && !isConnected && (
-                <div className="animate-pulse absolute inset-0 -m-2 rounded-full shadow-[0_0_0_8px_rgba(239,68,68,0.12)]" />
+                <div className="animate-pulse absolute inset-0 -m-2 rounded-full pointer-events-none shadow-[0_0_0_8px_rgba(239,68,68,0.12)]" />
               )}
               <Button
                 variant={isConnected ? "destructive" : hasError ? "destructive" : "default"}
@@ -208,10 +208,17 @@ export function ConversationView({ ws, recorder }: Props) {
               </Button>
             </div>
 
-            {isConnected && (
+            {isConnected && !isWarming && (
               <div className="flex flex-col items-center gap-0.5 text-center">
                 <p className="text-sm font-medium text-destructive">Recording…</p>
                 <p className="text-xs text-muted-foreground">Tap to stop</p>
+              </div>
+            )}
+
+            {isWarming && (
+              <div className="flex flex-col items-center gap-0.5 text-center">
+                <p className="text-sm font-medium">Connecting…</p>
+                <p className="text-xs text-muted-foreground">Loading model, please wait</p>
               </div>
             )}
 
