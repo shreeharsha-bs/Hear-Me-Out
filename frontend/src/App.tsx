@@ -21,13 +21,22 @@ function App() {
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-1 flex-col min-h-0">
         <TabsList className="mb-4 w-full !flex !flex-row">
-          <TabsTrigger value="conversation" className="flex-1 gap-1.5 rounded-md">
+          <TabsTrigger
+            value="conversation"
+            className={`flex-1 gap-1.5 rounded-md ${activeTab === "conversation" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground"}`}
+          >
             <Mic />Chat
           </TabsTrigger>
-          <TabsTrigger value="voice-conversion" className="flex-1 gap-1.5 rounded-md">
+          <TabsTrigger
+            value="voice-conversion"
+            className={`flex-1 gap-1.5 rounded-md ${activeTab === "voice-conversion" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground"}`}
+          >
             <Wand2 />Convert
           </TabsTrigger>
-          <TabsTrigger value="metrics" className="flex-1 gap-1.5 rounded-md">
+          <TabsTrigger
+            value="metrics"
+            className={`flex-1 gap-1.5 rounded-md ${activeTab === "metrics" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground"}`}
+          >
             <GitCompare />Metrics
           </TabsTrigger>
         </TabsList>
