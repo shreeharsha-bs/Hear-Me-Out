@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Badge } from "@/components/ui/badge"
 import { Spinner } from "@/components/ui/spinner"
@@ -227,7 +226,7 @@ export function ConversationView({ ws, recorder }: Props) {
           )}
 
           {hasMessages && !isWarming && (
-            <ScrollArea className="flex-1">
+            <div className="flex-1 overflow-y-auto">
               <div className="flex flex-col gap-2.5 p-5">
                 {ws.transcripts.map((t, i) => (
                   <div key={i}>
@@ -253,7 +252,7 @@ export function ConversationView({ ws, recorder }: Props) {
                   </div>
                 )}
               </div>
-            </ScrollArea>
+            </div>
           )}
 
           {showResult && (
@@ -370,11 +369,11 @@ export function ConversationView({ ws, recorder }: Props) {
                 </p>
               </div>
             ) : ws.partialTranscript ? (
-              <ScrollArea className="flex-1">
+              <div className="flex-1 overflow-y-auto">
                 <p className="p-4 text-sm leading-relaxed text-muted-foreground">
                   {ws.partialTranscript}
                 </p>
-              </ScrollArea>
+              </div>
             ) : (
               <div className="flex flex-1 items-center justify-center p-4">
                 <Empty className="border-0">
