@@ -162,7 +162,7 @@ export function ConversationView({ ws, recorder }: Props) {
       )}
 
       {/* LEFT: Message feed */}
-      <Card className="flex flex-col overflow-hidden min-h-0 h-full">
+      <Card className="flex flex-col overflow-hidden h-full py-0">
         <CardContent className="flex flex-1 flex-col p-0 overflow-y-auto" role="status" aria-live="polite">
           {hasError && (
             <Alert variant="destructive" className="m-3">
@@ -227,7 +227,7 @@ export function ConversationView({ ws, recorder }: Props) {
 
       {/* RIGHT: Controls column */}
       <div className="flex flex-col gap-4 order-first md:order-none">
-        <Card>
+        <Card className="py-0">
           <CardContent className="flex flex-col items-center gap-3 px-4 py-4">
             <div className="relative">
               {isConnected && (
@@ -280,7 +280,7 @@ export function ConversationView({ ws, recorder }: Props) {
           </CardContent>
         </Card>
 
-        <Card className="flex flex-1 flex-col overflow-hidden min-h-0 h-full">
+        <Card className="flex flex-1 flex-col overflow-hidden h-full py-0">
           <CardContent className="flex flex-1 flex-col p-0">
             {!hasMessages && !isWarming ? (
               <div className="flex flex-1 flex-col items-center justify-center gap-2 p-4">
