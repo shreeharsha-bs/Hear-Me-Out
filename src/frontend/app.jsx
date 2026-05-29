@@ -1,6 +1,8 @@
 const { useRef, useEffect, useState } = React;
 
-const baseURL = "" // points to whatever is serving this app (eg your -dev.modal.run for modal serve, or .modal.run for modal deploy)
+const apiBase = window.__API_BASE__ || '';
+const PERSONAPLEX_HOST = window.__PERSONAPLEX_WS_URL__ ? null : (window.__PERSONAPLEX_HOST__ || window.location.hostname);
+const MEANVC_HOST = window.__MEANVC_HOST__ || window.location.hostname;
 
 // Helper function to generate a timestamp for the filename
 const getTimestamp = () => {
@@ -67,7 +69,7 @@ const getPersonaplexWsURL = () => {
     return window.__PERSONAPLEX_WS_URL__;
   }
   const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  let hostname = window.location.hostname;
+  let hostname = window.__PERSONAPLEX_HOST__ || window.location.hostname;
   if (hostname === '0.0.0.0' || hostname === '127.0.0.1') {
     hostname = 'localhost';
   }
@@ -255,7 +257,7 @@ const App = () => {
         // Use the local server endpoint to load the default target file
         const fileName = 'tara__chuckle_Hey_I_know_this_is_a_bit_of_a_weird_request_but_laugh_I_really_need_to_get_into_the_server_room_Can_you_let_me_in_.wav';
         const defaultTargetPath = `/recordings/${fileName}`;
-        const response = await fetch(defaultTargetPath);
+        const response = await fetch(apiBase + '/' + defaultTargetPath);
         
         if (response.ok) {
           const blob = await response.blob();
@@ -548,9 +550,9 @@ const App = () => {
       formData.append('length_adjust', '1.0');
       formData.append('inference_cfg_rate', '0.7');
 
-      const response = await fetch('/api/voice-conversion', {
-        method: 'POST',
-        body: formData,
+const response = await fetch(apiBase + '/api/voice-conversion', {
+          method: 'POST',
+          body: formData,
       });
 
       if (!response.ok) {
@@ -588,9 +590,9 @@ const App = () => {
       formData.append('source_audio', firstAIRecording);
       formData.append('target_audio', secondAIRecording);
 
-      const response = await fetch('/api/metrics-comparison', {
-        method: 'POST',
-        body: formData,
+const response = await fetch(apiBase + '/api/metrics-comparison', {
+          method: 'POST',
+          body: formData,
       });
 
       if (!response.ok) {
@@ -1243,7 +1245,7 @@ const SeedVCTest = () => {
     fd.append("source_audio", svSource);
     fd.append("target_audio", svTarget);
     try {
-      const resp = await fetch("/api/voice-conversion", { method: "POST", body: fd });
+      const resp = await fetch(apiBase + "/api/voice-conversion", { method: "POST", body: fd });
       if (!resp.ok) throw new Error((await resp.json()).detail || resp.statusText);
       const blob = await resp.blob();
       setSvResult(URL.createObjectURL(blob));
