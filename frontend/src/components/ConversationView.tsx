@@ -188,7 +188,7 @@ export function ConversationView({ ws, recorder }: Props) {
   return (
     <div className="grid grid-cols-1 gap-5 md:grid-cols-[1fr_320px] md:h-[calc(100vh-140px)]">
       {/* LEFT: Message feed */}
-      <Card className="flex flex-col overflow-hidden min-h-0">
+      <Card className="flex flex-col overflow-hidden min-h-0 h-full">
         <CardContent className="flex flex-1 flex-col p-0" role="status" aria-live="polite">
           {hasError && (
             <Alert variant="destructive" className="m-4">
@@ -365,7 +365,7 @@ export function ConversationView({ ws, recorder }: Props) {
           </CardContent>
         </Card>
 
-        <Card className="flex flex-1 flex-col overflow-hidden min-h-0">
+        <Card className="flex flex-1 flex-col overflow-hidden min-h-0 h-full">
           <CardContent className="flex flex-1 flex-col p-0">
             {!hasMessages && !isWarming ? (
               <div className="flex flex-1 flex-col items-center justify-center gap-3 p-4">
