@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback } from "react";
-import { MEANVC_HOST } from "@/lib/config";
+import { getMeanvcWsUrl, getMeanvcLoadTargetUrl } from "@/lib/config";
 
 declare var Recorder: any;
 
@@ -34,10 +34,7 @@ export function useMeanVCPipeline(
     const fd = new FormData();
     fd.append("wav", file);
     try {
-      const resp = await fetch(
-        `https://${MEANVC_HOST}:5002/api/meanvc/load-target`,
-        { method: "POST", body: fd },
-      );
+      const resp = await fetch(getMeanvcLoadTargetUrl(), { method: "POST", body: fd });
       const data = await resp.json();
       if (data.target_id) {
         setState(s => ({
@@ -77,7 +74,7 @@ const source = audioCtx.createMediaStreamSource(stream);
     const processor = audioCtx.createScriptProcessor(2048, 1, 1);
 
     // 4. Connect to MeanVC WS
-    const meanvcUrl = `wss://${MEANVC_HOST}:5002/api/meanvc/stream?target_id=${state.vcTargetId}&steps=8&source_sr=${audioCtx.sampleRate}`;
+    const meanvcUrl = getMeanvcWsUrl(state.vcTargetId!, audioCtx.sampleRate);
     console.log("[MeanVC] Connecting to:", meanvcUrl);
     const meanvcWs = new WebSocket(meanvcUrl);
     meanvcWsRef.current = meanvcWs;

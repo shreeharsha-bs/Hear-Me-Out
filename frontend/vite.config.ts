@@ -33,6 +33,12 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true,
           secure: false,
         },
+        '/meanvc': {
+          target: 'https://130.237.3.103:5002',
+          changeOrigin: true,
+          secure: false,
+          ws: true,
+        },
       },
     },
   }
