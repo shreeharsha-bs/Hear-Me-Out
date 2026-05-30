@@ -78,6 +78,9 @@ const source = audioCtx.createMediaStreamSource(stream);
     console.log("[MeanVC] Connecting to:", meanvcUrl);
     const meanvcWs = new WebSocket(meanvcUrl);
     meanvcWsRef.current = meanvcWs;
+    meanvcWs.addEventListener("open", () => console.log("[MeanVC] addEventListener OPEN"));
+    meanvcWs.addEventListener("error", (e) => console.error("[MeanVC] addEventListener ERROR", e));
+    meanvcWs.addEventListener("close", (e) => console.log("[MeanVC] addEventListener CLOSE", e.code, e.reason));
 
     // 5. Create encoder Worker
     const encoderWorker = new Worker(
