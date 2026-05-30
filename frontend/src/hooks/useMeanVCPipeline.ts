@@ -169,6 +169,7 @@ const source = audioCtx.createMediaStreamSource(stream);
 
   const getUserAudioWav = useCallback((): Blob | null => {
     const chunks = userPcmRef.current;
+    console.log("[MeanVC] getUserAudioWav: chunks:", chunks.length, "total samples:", chunks.reduce((s,c)=>s+c.length,0));
     if (chunks.length === 0) return null;
     const total = chunks.reduce((s, c) => s + c.length, 0);
     const combined = new Float32Array(total);

@@ -95,8 +95,10 @@ export function ConversationView({ ws, recorder }: Props) {
 
     // If VC was active, process VC user audio for transcription and downloads
     if (wasVC) {
-      (async () => {
+      console.log("[ConvVC] Processing VC audio for post-conversation UI...")
+      ;(async () => {
         const vcWav = getUserAudioWav()
+        console.log("[ConvVC] VC user audio WAV:", vcWav?.size, "bytes")
         if (!vcWav) return
         const vcUrl = URL.createObjectURL(vcWav)
         setUserWavUrl(vcUrl)
@@ -120,6 +122,7 @@ export function ConversationView({ ws, recorder }: Props) {
             return { speaker: "personaplex" as const, text: t.text, start, end: start + 2 }
           })
           setDiarized([...vcTurns, ...pplxTurns].sort((a, b) => a.start - b.start))
+          console.log("[ConvVC] Diarized set:", vcTurns.length, "vc turns,", pplxTurns.length, "pplx turns")
         } catch (e) {
           console.error("VC transcription failed:", e)
           // Fallback: show downloads without transcript
