@@ -100,7 +100,12 @@ export function ConversationView({ ws, recorder }: Props) {
         if (!vcWav) return
         const vcUrl = URL.createObjectURL(vcWav)
         setUserWavUrl(vcUrl)
-        // Trigger transcription with VC audio
+        // Get PersonaPlex WAV
+        try {
+          const pplxWav = await ws.getPersonaplexWav()
+          if (pplxWav) setPersonaplexWavUrl(URL.createObjectURL(pplxWav))
+        } catch { /* ignore */ }
+        // Trigger transcription
         try {
           const result = await transcribeRecording([vcWav])
           const vcTurns: DiarizedTurn[] = (result.segments || []).map(
@@ -115,11 +120,10 @@ export function ConversationView({ ws, recorder }: Props) {
             return { speaker: "personaplex" as const, text: t.text, start, end: start + 2 }
           })
           setDiarized([...vcTurns, ...pplxTurns].sort((a, b) => a.start - b.start))
-          // Get PersonaPlex WAV
-          const pplxWav = await ws.getPersonaplexWav()
-          if (pplxWav) setPersonaplexWavUrl(URL.createObjectURL(pplxWav))
         } catch (e) {
           console.error("VC transcription failed:", e)
+          // Fallback: show downloads without transcript
+          setDiarized([])
         }
       })()
     }
