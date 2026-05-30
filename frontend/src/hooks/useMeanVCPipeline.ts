@@ -157,13 +157,8 @@ let encCount = 0;
       }
       pcmBuffer = merged.slice(offset);
     });
-        }
-        offset += FRAME_SIZE;
-      }
-      pcmBuffer = merged.slice(offset);
-    });
 
-    }, [state.vcTargetId]);
+  }, [state.vcTargetId]);
 
   const stopVCStream = useCallback(() => {
     meanvcWsRef.current?.close();
