@@ -25,7 +25,6 @@ export function useMeanVCPipeline(
   const meanvcWsRef = useRef<WebSocket | null>(null);
   const pcmStreamRef = useRef<MediaStream | null>(null);
   const pcmContextRef = useRef<AudioContext | null>(null);
-  const encoderWorkerRef = useRef<Worker | null>(null);
   const onAudioRef = useRef(onPersonaplexAudio);
   onAudioRef.current = onPersonaplexAudio;
 
@@ -106,11 +105,31 @@ const source = audioCtx.createMediaStreamSource(stream);
       setState(s => ({ ...s, vcStatus: "MeanVC WebSocket error" }));
     });
 
-    // 5b. Declare encoderWorker with let BEFORE message handler (for hoisting)
-    let encoderWorker: Worker;
+    // 5b. Set up native AudioEncoder (WebCodecs) for Opus encoding
     let pcmBuffer = new Float32Array(0);
-    const FRAME_SIZE = 640;
+    const FRAME_SIZE = 640; // 40ms at 16000Hz
     let msgCount = 0;
+    let encoder: AudioEncoder | null = null;
+
+    try {
+      encoder = new AudioEncoder({
+        output: (chunk) => {
+          const buf = new ArrayBuffer(chunk.byteLength);
+          chunk.copyTo(buf);
+          onAudioRef.current(buf);
+        },
+        error: (e) => console.error("[MeanVC] Encoder error:", e),
+      });
+      encoder.configure({
+        codec: "opus",
+        sampleRate: 16000,
+        numberOfChannels: 1,
+        bitrate: 64000,
+      });
+      console.log("[MeanVC] AudioEncoder configured");
+    } catch (e: any) {
+      console.error("[MeanVC] AudioEncoder init failed:", e.message);
+    }
 
     meanvcWs.addEventListener("message", (event: MessageEvent) => {
       msgCount++;
@@ -124,51 +143,27 @@ const source = audioCtx.createMediaStreamSource(stream);
       merged.set(float32, pcmBuffer.length);
       let offset = 0;
       while (offset + FRAME_SIZE <= merged.length) {
-        if (!encoderWorker) break;
-        encoderWorker.postMessage(
-          { command: "encode", buffers: [merged.slice(offset, offset + FRAME_SIZE)] },
-        );
+        if (!encoder) break;
+        const frame = new AudioData({
+          format: "f32-planar",
+          sampleRate: 16000,
+          numberOfFrames: FRAME_SIZE,
+          numberOfChannels: 1,
+          timestamp: 0,
+          data: merged.slice(offset, offset + FRAME_SIZE),
+        });
+        encoder.encode(frame);
+        frame.close();
         offset += FRAME_SIZE;
       }
       pcmBuffer = merged.slice(offset);
     });
 
-    // 6. Create encoder Worker (message handler already in place)
-encoderWorker = new Worker(
-      "https://cdn.jsdelivr.net/npm/opus-recorder@latest/dist/encoderWorker.min.js",
-    );
-    encoderWorkerRef.current = encoderWorker;
-
-    encoderWorker.onmessage = (e) => {
-      console.log("[MeanVC] Encoder response:", e.data?.command, e.data?.byteLength);
-      if (e.data && e.data.command === "page" && e.data.page) {
-        onAudioRef.current(e.data.page);
-      } else if (e.data instanceof ArrayBuffer && e.data.byteLength > 0) {
-        onAudioRef.current(e.data);
-      }
-    };
-    encoderWorker.onerror = (e) => {
-      console.error("[MeanVC] Encoder worker error:", e);
-      setState(s => ({ ...s, vcStatus: "Encoder error" }));
-    };
-    encoderWorker.postMessage({
-      command: "init",
-      config: {
-        encoderApplication: 2049,
-        encoderFrameSize: 40,
-        encoderSampleRate: 16000,
-        maxFramesPerPage: 1,
-        numberOfChannels: 1,
-        streamPages: true,
-      },
-    });
-  }, [state.vcTargetId]);
+    }, [state.vcTargetId]);
 
   const stopVCStream = useCallback(() => {
     meanvcWsRef.current?.close();
     meanvcWsRef.current = null;
-    encoderWorkerRef.current?.terminate();
-    encoderWorkerRef.current = null;
     pcmStreamRef.current?.getTracks().forEach(t => t.stop());
     pcmStreamRef.current = null;
     pcmContextRef.current?.close();
