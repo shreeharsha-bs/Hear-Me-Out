@@ -102,11 +102,12 @@ export function ConversationView({ ws, recorder }: Props) {
         if (!vcWav) return
         const vcUrl = URL.createObjectURL(vcWav)
         setUserWavUrl(vcUrl)
-        // Get PersonaPlex WAV
+        // Get PersonaPlex WAV and set merged to user audio
         try {
           const pplxWav = await ws.getPersonaplexWav()
           if (pplxWav) setPersonaplexWavUrl(URL.createObjectURL(pplxWav))
         } catch { /* ignore */ }
+        setMergedWavUrl(vcUrl)
         // Trigger transcription
         try {
           const result = await transcribeRecording([vcWav])
