@@ -134,8 +134,8 @@ const source = audioCtx.createMediaStreamSource(stream);
     });
 
     // 6. Create encoder Worker (message handler already in place)
-    encoderWorker = new Worker(
-      "https://cdn.jsdelivr.net/npm/opus-recorder@8.0.5/dist/encoderWorker.min.js",
+encoderWorker = new Worker(
+      "https://cdn.jsdelivr.net/npm/opus-recorder@latest/dist/encoderWorker.min.js",
     );
     encoderWorkerRef.current = encoderWorker;
 
@@ -147,7 +147,10 @@ const source = audioCtx.createMediaStreamSource(stream);
         onAudioRef.current(e.data);
       }
     };
-    encoderWorker.onerror = () => setState(s => ({ ...s, vcStatus: "Encoder error" }));
+    encoderWorker.onerror = (e) => {
+      console.error("[MeanVC] Encoder worker error:", e);
+      setState(s => ({ ...s, vcStatus: "Encoder error" }));
+    };
     encoderWorker.postMessage({
       command: "init",
       config: {
