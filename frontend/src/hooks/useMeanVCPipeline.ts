@@ -131,12 +131,13 @@ const source = audioCtx.createMediaStreamSource(stream);
     // Hook into the Recorder's Ogg Opus encoder output directly
     if (vcRecorder.encoder) {
       vcRecorder.encoder.addEventListener("message", (e: MessageEvent) => {
+        console.log("[MeanVC] Worker response:", e.data?.command, e.data?.byteLength);
         if (e.data && e.data.command === "page" && e.data.page) {
-          console.log("[MeanVC] Ogg Opus page:", e.data.page.byteLength);
           onAudioRef.current(e.data.page);
-        } else if (e.data.command === "ready") {
-          console.log("[MeanVC] Encoder ready");
         }
+      });
+      vcRecorder.encoder.addEventListener("messageerror", (e: MessageEvent) => {
+        console.error("[MeanVC] Worker message error:", e);
       });
     }
 
