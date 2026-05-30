@@ -128,10 +128,17 @@ const source = audioCtx.createMediaStreamSource(stream);
     await new Promise(r => setTimeout(r, 1500));
     console.log("[MeanVC] Recorder encoder ready, vcRecorder.encoder:", !!vcRecorder.encoder, !!vcRecorder.ondataavailable);
 
-    // Hook into the Recorder's data output
-    vcRecorder.ondataavailable = (arrayBuffer: ArrayBuffer) => {
-      onAudioRef.current(arrayBuffer);
-    };
+    // Hook into the Recorder's Ogg Opus encoder output directly
+    if (vcRecorder.encoder) {
+      vcRecorder.encoder.addEventListener("message", (e: MessageEvent) => {
+        if (e.data && e.data.command === "page" && e.data.page) {
+          console.log("[MeanVC] Ogg Opus page:", e.data.page.byteLength);
+          onAudioRef.current(e.data.page);
+        } else if (e.data.command === "ready") {
+          console.log("[MeanVC] Encoder ready");
+        }
+      });
+    }
 
 let encCount = 0;
     meanvcWs.addEventListener("message", (event: MessageEvent) => {
