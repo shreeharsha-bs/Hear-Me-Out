@@ -78,21 +78,10 @@ const source = audioCtx.createMediaStreamSource(stream);
     console.log("[MeanVC] Connecting to:", meanvcUrl);
     const meanvcWs = new WebSocket(meanvcUrl);
     meanvcWsRef.current = meanvcWs;
-    meanvcWs.addEventListener("open", () => console.log("[MeanVC] addEventListener OPEN"));
-    meanvcWs.addEventListener("error", (e) => console.error("[MeanVC] addEventListener ERROR", e));
-    meanvcWs.addEventListener("close", (e) => console.log("[MeanVC] addEventListener CLOSE", e.code, e.reason));
+    meanvcWs.binaryType = "arraybuffer";
 
-    // 5. Create encoder Worker
-    const encoderWorker = new Worker(
-      "https://cdn.jsdelivr.net/npm/opus-recorder@8.0.5/dist/encoderWorker.min.js",
-    );
-    encoderWorkerRef.current = encoderWorker;
-
-    let pcmBuffer = new Float32Array(0);
-    const FRAME_SIZE = 640;
-
-    // 6. Set ALL MeanVC WebSocket handlers IMMEDIATELY
-    meanvcWs.onopen = () => {
+    // 5. Set ALL MeanVC WebSocket handlers BEFORE any async work
+    meanvcWs.addEventListener("open", () => {
       console.log("[MeanVC] WebSocket OPEN - starting mic capture");
       setState(s => ({ ...s, vcStatus: "VC pipeline active - connected" }));
       processor.onaudioprocess = (e) => {
@@ -102,18 +91,26 @@ const source = audioCtx.createMediaStreamSource(stream);
       };
       source.connect(processor);
       processor.connect(audioCtx.destination);
-    };
-
-    meanvcWs.onclose = (e) => {
+    });
+    meanvcWs.addEventListener("close", (e: CloseEvent) => {
       console.log("[MeanVC] WebSocket CLOSE:", e.code, e.reason);
       setState(s => ({ ...s, vcStatus: "MeanVC disconnected" }));
-    };
-    meanvcWs.onerror = () => {
+    });
+    meanvcWs.addEventListener("error", () => {
       console.error("[MeanVC] WebSocket ERROR");
       setState(s => ({ ...s, vcStatus: "MeanVC WebSocket error" }));
-    };
+    });
 
-    meanvcWs.onmessage = async (event) => {
+    // 6. Create encoder Worker and set up encoding pipeline
+    const encoderWorker = new Worker(
+      "https://cdn.jsdelivr.net/npm/opus-recorder@8.0.5/dist/encoderWorker.min.js",
+    );
+    encoderWorkerRef.current = encoderWorker;
+
+    let pcmBuffer = new Float32Array(0);
+    const FRAME_SIZE = 640;
+
+    meanvcWs.addEventListener("message", async (event: MessageEvent) => {
       if (typeof event.data === "string") return;
       const float32 = new Float32Array(await (event.data as Blob).arrayBuffer());
       if (float32.length === 0) return;
@@ -130,9 +127,8 @@ const source = audioCtx.createMediaStreamSource(stream);
         offset += FRAME_SIZE;
       }
       pcmBuffer = merged.slice(offset);
-    };
+    });
 
-    // 7. Set up encoder Worker handlers
     encoderWorker.onmessage = (e) => {
       if (e.data && e.data.command === "page" && e.data.page) {
         onAudioRef.current(e.data.page);
@@ -140,11 +136,7 @@ const source = audioCtx.createMediaStreamSource(stream);
         onAudioRef.current(e.data);
       }
     };
-
-    encoderWorker.onerror = () => {
-      setState(s => ({ ...s, vcStatus: "Encoder error" }));
-    };
-
+    encoderWorker.onerror = () => setState(s => ({ ...s, vcStatus: "Encoder error" }));
     encoderWorker.postMessage({
       command: "init",
       config: {
