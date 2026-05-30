@@ -61,9 +61,11 @@ export function useMeanVCPipeline(
     setState(s => ({ ...s, vcStatus: "Starting voice conversion pipeline...", vcStreaming: true }));
 
     // 1. Raw mic
+    console.log("[MeanVC] Getting mic...");
     const stream = await navigator.mediaDevices.getUserMedia({
       audio: { sampleRate: 16000, channelCount: 1, echoCancellation: false, noiseSuppression: false, autoGainControl: false },
     });
+    console.log("[MeanVC] Mic obtained, creating AudioContext...");
     pcmStreamRef.current = stream;
 
     // 2. AudioContext
@@ -76,8 +78,13 @@ export function useMeanVCPipeline(
 
     // 4. Connect to MeanVC WS
     const meanvcUrl = `wss://${MEANVC_HOST}:5002/api/meanvc/stream?target_id=${state.vcTargetId}&steps=8&source_sr=${audioCtx.sampleRate}`;
+    console.log("[MeanVC] Connecting to:", meanvcUrl);
     const meanvcWs = new WebSocket(meanvcUrl);
     meanvcWsRef.current = meanvcWs;
+
+    meanvcWs.onopen = () => console.log("[MeanVC] WebSocket OPEN");
+    meanvcWs.onclose = (e) => console.log("[MeanVC] WebSocket CLOSE:", e.code, e.reason);
+    meanvcWs.onerror = (e) => console.error("[MeanVC] WebSocket ERROR");
 
     // 5. Create encoder Worker for Opus encoding of MeanVC output
     const encoderWorker = new Worker(
