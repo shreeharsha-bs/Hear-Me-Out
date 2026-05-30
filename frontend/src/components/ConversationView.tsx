@@ -54,6 +54,7 @@ export function ConversationView({ ws, recorder }: Props) {
     (text) => ws.addUserTranscript(text),
   )
   const { vcEnabled, vcTargetId, vcStreaming, startVCStream, stopVCStream: vcStop } = vcPipeline
+  const { isRecording, start: startRecorder } = recorder
   const [diarized, setDiarized] = useState<DiarizedTurn[] | null>(null)
   const [userWavUrl, setUserWavUrl] = useState<string | null>(null)
   const [personaplexWavUrl, setPersonaplexWavUrl] = useState<string | null>(null)
