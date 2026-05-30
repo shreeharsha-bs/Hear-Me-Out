@@ -96,12 +96,9 @@ export function ConversationView({ ws, recorder }: Props) {
   useEffect(() => {
     if (ws.handshakeReceived && micClicked.current && !isRecording && !vcStreaming) {
       if (vcEnabled && vcTargetId) {
-        // Send heartbeat while VC pipeline spins up
-        const hb = setInterval(() => ws.sendAudio(new ArrayBuffer(0)), 500);
-        startVCStream().finally(() => clearInterval(hb)).catch(() => {
-          clearInterval(hb);
-          ws.disconnect();
-          micClicked.current = false;
+        startVCStream().catch(() => {
+          ws.disconnect()
+          micClicked.current = false
         })
       } else {
         startRecorder().catch(() => {

@@ -84,9 +84,12 @@ const source = audioCtx.createMediaStreamSource(stream);
     meanvcWs.addEventListener("open", () => {
       console.log("[MeanVC] WebSocket OPEN - starting mic capture");
       setState(s => ({ ...s, vcStatus: "VC pipeline active - connected" }));
+      let sentCount = 0;
       processor.onaudioprocess = (e) => {
         if (meanvcWs.readyState === WebSocket.OPEN) {
           meanvcWs.send(e.inputBuffer.getChannelData(0).buffer);
+          sentCount++;
+          if (sentCount <= 3) console.log("[MeanVC] Sent PCM chunk", sentCount);
         }
       };
       source.connect(processor);
@@ -110,7 +113,10 @@ const source = audioCtx.createMediaStreamSource(stream);
     let pcmBuffer = new Float32Array(0);
     const FRAME_SIZE = 640;
 
+    let msgCount = 0;
     meanvcWs.addEventListener("message", (event: MessageEvent) => {
+      msgCount++;
+      if (msgCount <= 3) console.log("[MeanVC] Received message", msgCount, "bytes:", (event.data as ArrayBuffer)?.byteLength);
       if (typeof event.data === "string") return;
       const float32 = new Float32Array(event.data);
       if (float32.length === 0) return;
