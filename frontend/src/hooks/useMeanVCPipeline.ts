@@ -124,17 +124,18 @@ const source = audioCtx.createMediaStreamSource(stream);
     const FRAME_SIZE = 1920; // 80ms at 24000Hz
     let msgCount = 0;
 
-    // Wait briefly for encoder to initialize, then set up message handler
-    await new Promise(r => setTimeout(r, 200));
+    // Wait for encoder Worker to initialize (needs WASM download + compile)
+    await new Promise(r => setTimeout(r, 1500));
+    console.log("[MeanVC] Recorder encoder ready, vcRecorder.encoder:", !!vcRecorder.encoder, !!vcRecorder.ondataavailable);
 
     // Hook into the Recorder's data output
     vcRecorder.ondataavailable = (arrayBuffer: ArrayBuffer) => {
       onAudioRef.current(arrayBuffer);
     };
 
+let encCount = 0;
     meanvcWs.addEventListener("message", (event: MessageEvent) => {
       msgCount++;
-      if (msgCount <= 3) console.log("[MeanVC] Received message", msgCount, "bytes:", (event.data as ArrayBuffer)?.byteLength);
       if (typeof event.data === "string") return;
       const float32 = new Float32Array(event.data);
       if (float32.length === 0) return;
@@ -149,6 +150,13 @@ const source = audioCtx.createMediaStreamSource(stream);
             command: "encode",
             buffers: [merged.slice(offset, offset + FRAME_SIZE)],
           });
+          encCount++;
+          if (encCount <= 3) console.log("[MeanVC] Encoder sent", encCount);
+        }
+        offset += FRAME_SIZE;
+      }
+      pcmBuffer = merged.slice(offset);
+    });
         }
         offset += FRAME_SIZE;
       }
