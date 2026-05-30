@@ -354,14 +354,15 @@ async def handle_load_target(request: web.Request) -> web.Response:
         wav, sr = librosa.load(tmp_path, sr=16000)
         wav_tensor = torch.from_numpy(wav).unsqueeze(0)
 
-        # Speaker embedding (move to CPU since VC model runs on CPU)
+        # Speaker embedding
         if models.sv_model is not None:
-            spk_emb = models.sv_model(wav_tensor).detach().cpu()
+            spk_emb = models.sv_model(wav_tensor).detach()
         else:
             spk_emb = torch.zeros(1, 512)
 
-        # Prompt mel (move to CPU)
-        prompt_mel = models.mel_extract(wav_tensor).transpose(1, 2).detach().cpu()
+        # Prompt mel
+        prompt_mel = models.mel_extract(wav_tensor)
+        prompt_mel = prompt_mel.transpose(1, 2).detach()
 
         with targets_lock:
             targets[target_id] = (spk_emb, prompt_mel)
