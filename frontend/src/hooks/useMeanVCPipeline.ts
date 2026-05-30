@@ -61,7 +61,7 @@ export function useMeanVCPipeline(
     // 1. Raw mic
     console.log("[MeanVC] Getting mic...");
     const stream = await navigator.mediaDevices.getUserMedia({
-      audio: { sampleRate: 16000, channelCount: 1, echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+      audio: { sampleRate: 16000, channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
     });
     console.log("[MeanVC] Mic obtained, creating AudioContext...");
     pcmStreamRef.current = stream;
@@ -97,7 +97,6 @@ const source = audioCtx.createMediaStreamSource(stream);
         }
       };
       source.connect(processor);
-      processor.connect(audioCtx.destination);
     });
     meanvcWs.addEventListener("close", (e: CloseEvent) => {
       console.log("[MeanVC] WebSocket CLOSE:", e.code, e.reason);
