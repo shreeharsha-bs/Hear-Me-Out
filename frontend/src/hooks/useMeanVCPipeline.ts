@@ -126,7 +126,7 @@ const source = audioCtx.createMediaStreamSource(stream);
       while (offset + FRAME_SIZE <= merged.length) {
         if (!encoderWorker) break;
         encoderWorker.postMessage(
-          { command: "encode", buffers: [new Float32Array(merged.slice(offset, offset + FRAME_SIZE)).buffer] },
+          { command: "encode", buffers: [merged.slice(offset, offset + FRAME_SIZE)] },
         );
         offset += FRAME_SIZE;
       }
