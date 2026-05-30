@@ -25,6 +25,7 @@ export function useMeanVCPipeline(
   const meanvcWsRef = useRef<WebSocket | null>(null);
   const pcmStreamRef = useRef<MediaStream | null>(null);
   const pcmContextRef = useRef<AudioContext | null>(null);
+  const vcRecorderRef = useRef<Recorder | null>(null);
   const onAudioRef = useRef(onPersonaplexAudio);
   onAudioRef.current = onPersonaplexAudio;
 
@@ -105,34 +106,31 @@ const source = audioCtx.createMediaStreamSource(stream);
       setState(s => ({ ...s, vcStatus: "MeanVC WebSocket error" }));
     });
 
-    // 5b. Set up native AudioEncoder (WebCodecs) for Opus encoding
-    let pcmBuffer = new Float32Array(0);
-    const FRAME_SIZE = 960; // 40ms at 24000Hz
-    let msgCount = 0;
-    let encoder: AudioEncoder | null = null;
-    let encodeCount = 0;
+    // 5b. Create Recorder to get access to its Ogg Opus encoder
+    console.log("[MeanVC] Creating Recorder for Ogg Opus encoding...");
+    const vcRecorder = new Recorder({
+      encoderPath: "https://cdn.jsdelivr.net/npm/opus-recorder@latest/dist/encoderWorker.min.js",
+      streamPages: true,
+      encoderApplication: 2049,
+      encoderFrameSize: 80,
+      encoderSampleRate: 24000,
+      maxFramesPerPage: 1,
+      numberOfChannels: 1,
+      monitorGain: 0,
+    });
+    vcRecorderRef.current = vcRecorder;
 
-    try {
-      encoder = new AudioEncoder({
-        output: (chunk) => {
-          const buf = new ArrayBuffer(chunk.byteLength);
-          chunk.copyTo(buf);
-          encodeCount++;
-          if (encodeCount <= 3) console.log("[MeanVC] Opus frame sent, bytes:", buf.byteLength);
-          onAudioRef.current(buf);
-        },
-        error: (e) => console.error("[MeanVC] Encoder error:", e),
-      });
-      encoder.configure({
-        codec: "opus",
-        sampleRate: 24000,
-        numberOfChannels: 1,
-        bitrate: 64000,
-      });
-      console.log("[MeanVC] AudioEncoder configured, state:", encoder.state);
-    } catch (e: any) {
-      console.error("[MeanVC] AudioEncoder init failed:", e.message);
-    }
+    let pcmBuffer = new Float32Array(0);
+    const FRAME_SIZE = 1920; // 80ms at 24000Hz
+    let msgCount = 0;
+
+    // Wait briefly for encoder to initialize, then set up message handler
+    await new Promise(r => setTimeout(r, 200));
+
+    // Hook into the Recorder's data output
+    vcRecorder.ondataavailable = (arrayBuffer: ArrayBuffer) => {
+      onAudioRef.current(arrayBuffer);
+    };
 
     meanvcWs.addEventListener("message", (event: MessageEvent) => {
       msgCount++;
@@ -146,20 +144,8 @@ const source = audioCtx.createMediaStreamSource(stream);
       merged.set(float32, pcmBuffer.length);
       let offset = 0;
       while (offset + FRAME_SIZE <= merged.length) {
-        if (!encoder || encoder.state !== "configured") break;
-        try {
-          const frame = new AudioData({
-            format: "f32-planar",
-            sampleRate: 24000,
-            numberOfFrames: FRAME_SIZE,
-            numberOfChannels: 1,
-            timestamp: 0,
-            data: merged.slice(offset, offset + FRAME_SIZE),
-          });
-          encoder.encode(frame);
-          frame.close();
-        } catch (e: any) {
-          if (msgCount <= 3) console.error("[MeanVC] AudioData encode error:", e.message);
+        if (vcRecorder.encoder) {
+          vcRecorder.encoder.encode([merged.slice(offset, offset + FRAME_SIZE)]);
         }
         offset += FRAME_SIZE;
       }
@@ -171,6 +157,8 @@ const source = audioCtx.createMediaStreamSource(stream);
   const stopVCStream = useCallback(() => {
     meanvcWsRef.current?.close();
     meanvcWsRef.current = null;
+    vcRecorderRef.current?.close?.();
+    vcRecorderRef.current = null;
     pcmStreamRef.current?.getTracks().forEach(t => t.stop());
     pcmStreamRef.current = null;
     pcmContextRef.current?.close();
