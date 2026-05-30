@@ -74,6 +74,7 @@ export function useMeanVCPipeline(
     // 3. ScriptProcessor for mic PCM
 const source = audioCtx.createMediaStreamSource(stream);
     const processor = audioCtx.createScriptProcessor(2048, 1, 1);
+    const vcDest = audioCtx.createMediaStreamDestination();
 
     // 4. Connect to MeanVC WS
     const meanvcUrl = getMeanvcWsUrl(state.vcTargetId!, audioCtx.sampleRate);
@@ -106,67 +107,52 @@ const source = audioCtx.createMediaStreamSource(stream);
       setState(s => ({ ...s, vcStatus: "MeanVC WebSocket error" }));
     });
 
-    // 5b. Create Recorder to get access to its Ogg Opus encoder
+    // 5b. Create Recorder to encode MeanVC output → Ogg Opus → PersonaPlex
     console.log("[MeanVC] Creating Recorder for Ogg Opus encoding...");
     const vcRecorder = new Recorder({
       encoderPath: "https://cdn.jsdelivr.net/npm/opus-recorder@latest/dist/encoderWorker.min.js",
       streamPages: true,
       encoderApplication: 2049,
-      encoderFrameSize: 80,
-      encoderSampleRate: 24000,
+      encoderFrameSize: 40,
+      encoderSampleRate: 16000,
       maxFramesPerPage: 1,
       numberOfChannels: 1,
       monitorGain: 0,
     });
     vcRecorderRef.current = vcRecorder;
 
-    let pcmBuffer = new Float32Array(0);
-    const FRAME_SIZE = 1920; // 80ms at 24000Hz
-    let msgCount = 0;
+    vcRecorder.ondataavailable = (arrayBuffer: ArrayBuffer) => {
+      onAudioRef.current(arrayBuffer);
+    };
 
-    // Wait for encoder Worker to initialize (needs WASM download + compile)
-    await new Promise(r => setTimeout(r, 1500));
-    console.log("[MeanVC] Recorder encoder ready, vcRecorder.encoder:", !!vcRecorder.encoder, !!vcRecorder.ondataavailable);
+    let vcOutputTime = audioCtx.currentTime + 0.5;
 
-    // Hook into the Recorder's Ogg Opus encoder output directly
-    if (vcRecorder.encoder) {
-      vcRecorder.encoder.addEventListener("message", (e: MessageEvent) => {
-        console.log("[MeanVC] Worker response:", e.data?.command, e.data?.byteLength);
-        if (e.data && e.data.command === "page" && e.data.page) {
-          onAudioRef.current(e.data.page);
-        }
-      });
-      vcRecorder.encoder.addEventListener("messageerror", (e: MessageEvent) => {
-        console.error("[MeanVC] Worker message error:", e);
-      });
-    }
-
-let encCount = 0;
     meanvcWs.addEventListener("message", (event: MessageEvent) => {
-      msgCount++;
       if (typeof event.data === "string") return;
       const float32 = new Float32Array(event.data);
       if (float32.length === 0) return;
-
-      const merged = new Float32Array(pcmBuffer.length + float32.length);
-      merged.set(pcmBuffer, 0);
-      merged.set(float32, pcmBuffer.length);
-      let offset = 0;
-      while (offset + FRAME_SIZE <= merged.length) {
-        if (vcRecorder.encoder) {
-          vcRecorder.encoder.postMessage({
-            command: "encode",
-            buffers: [merged.slice(offset, offset + FRAME_SIZE)],
-          });
-          encCount++;
-          if (encCount <= 3) console.log("[MeanVC] Encoder sent", encCount);
-        }
-        offset += FRAME_SIZE;
-      }
-      pcmBuffer = merged.slice(offset);
+      const buf = audioCtx.createBuffer(1, float32.length, 16000);
+      buf.getChannelData(0).set(float32);
+      const bufSource = audioCtx.createBufferSource();
+      bufSource.buffer = buf;
+      bufSource.connect(vcDest);
+      bufSource.start(vcOutputTime);
+      vcOutputTime = Math.max(vcOutputTime + buf.duration, audioCtx.currentTime + 0.01);
     });
 
-  }, [state.vcTargetId]);
+    let pcmBuffer = new Float32Array(0);
+    let msgCount = 0;
+
+    // 5c. Start the Recorder on the VC output stream
+    try {
+      await vcRecorder.start(vcDest.stream);
+      console.log("[MeanVC] Recorder started on VC stream");
+    } catch (e: any) {
+      console.warn("[MeanVC] Recorder.start(stream) failed:", e.message, "- trying without stream");
+      await vcRecorder.start();
+    }
+
+}, [state.vcTargetId]);
 
   const stopVCStream = useCallback(() => {
     meanvcWsRef.current?.close();
