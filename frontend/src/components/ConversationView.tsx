@@ -49,6 +49,10 @@ export function ConversationView({ ws, recorder }: Props) {
   const micClicked = useRef(false)
   const transcribed = useRef(false)
 
+  const vcPipeline = useMeanVCPipeline(
+    (data) => ws.sendAudio(data),
+    (text) => ws.addUserTranscript(text),
+  )
   const { vcEnabled, vcTargetId, vcStreaming, startVCStream, stopVCStream: vcStop } = vcPipeline
   const [diarized, setDiarized] = useState<DiarizedTurn[] | null>(null)
   const [userWavUrl, setUserWavUrl] = useState<string | null>(null)
