@@ -178,13 +178,18 @@ vcRecorder.ondataavailable = (arrayBuffer: ArrayBuffer) => {
       const decoder = new OggDecoder();
       await decoder.ready;
       const allPcm: Float32Array[] = [];
+      let lastSampleRate = 16000;
       for (const pkt of packets) {
         try {
-          const { channelData, samplesDecoded } = await decoder.decode(new Uint8Array(pkt));
-          if (samplesDecoded > 0) allPcm.push(new Float32Array(channelData[0]));
+          const { channelData, samplesDecoded, sampleRate } = await decoder.decode(new Uint8Array(pkt));
+          if (samplesDecoded > 0) {
+            allPcm.push(new Float32Array(channelData[0]));
+            if (sampleRate) lastSampleRate = sampleRate;
+          }
         } catch { /* skip invalid frames */ }
       }
       decoder.free();
+      console.log("[MeanVC] Decoded sample rate:", lastSampleRate, "packets:", allPcm.length);
       if (allPcm.length === 0) return null;
       const total = allPcm.reduce((s, c) => s + c.length, 0);
       const combined = new Float32Array(total);
@@ -200,7 +205,7 @@ vcRecorder.ondataavailable = (arrayBuffer: ArrayBuffer) => {
       ws(0, "RIFF"); view.setUint32(4, 36 + int16.length * 2, true);
       ws(8, "WAVE"); ws(12, "fmt "); view.setUint32(16, 16, true);
       view.setUint16(20, 1, true); view.setUint16(22, 1, true);
-      view.setUint32(24, 16000, true); view.setUint32(28, 32000, true);
+      view.setUint32(24, lastSampleRate, true); view.setUint32(28, lastSampleRate * 2, true);
       view.setUint16(32, 2, true); view.setUint16(34, 16, true);
       ws(36, "data"); view.setUint32(40, int16.length * 2, true);
       new Uint8Array(wav, 44).set(new Uint8Array(int16.buffer));
