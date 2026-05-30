@@ -888,12 +888,9 @@ const response = await fetch(apiBase + '/api/metrics-comparison', {
                     </label>
                     {vcStatus && <span className={`text-xs ${vcStatus.includes('Error') ? 'text-red-400' : 'text-green-400'}`}>{vcStatus}</span>}
                   </div>
-                  {vcEnabled && (
-                    <div>
-                      <input type="file" accept="audio/wav,.wav" onChange={(e) => uploadVcTarget(e.target.files[0])}
-                        className="w-full text-xs text-gray-300 file:mr-4 file:py-1 file:px-3 file:rounded file:bg-purple-600 file:text-white file:border-0 hover:file:bg-purple-500" />
-                    </div>
-                  )}
+                    <input type="file" accept="audio/wav,.wav" onChange={(e) => uploadVcTarget(e.target.files[0])}
+                      className="w-full text-xs text-gray-300 file:mr-4 file:py-1 file:px-3 file:rounded file:bg-purple-600 file:text-white file:border-0 hover:file:bg-purple-500" />
+                    {!vcEnabled && !vcTargetId && <p className="text-xs text-gray-500 mt-1">Enable the toggle to activate</p>}
                 </div>
 
                 {/* Voice Conversion Section */}
