@@ -94,7 +94,7 @@ export function ConversationView({ ws, recorder }: Props) {
   }, [recorder, ws, vcStreaming, vcStop])
 
   useEffect(() => {
-    if (ws.handshakeReceived && micClicked.current && !isRecording) {
+    if (ws.handshakeReceived && micClicked.current && !isRecording && !vcStreaming) {
       if (vcEnabled && vcTargetId) {
         startVCStream().catch(() => {
           ws.disconnect()
@@ -107,7 +107,7 @@ export function ConversationView({ ws, recorder }: Props) {
         })
       }
     }
-  }, [ws.handshakeReceived, isRecording, ws, vcEnabled, vcTargetId, startVCStream, startRecorder])
+  }, [ws.handshakeReceived, isRecording, vcStreaming, vcEnabled, vcTargetId, startVCStream, startRecorder])
 
   // Route PersonaPlex playback into merged capture once recording starts
   useEffect(() => {
