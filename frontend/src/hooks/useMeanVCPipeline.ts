@@ -85,16 +85,17 @@ export function useMeanVCPipeline(
     );
     encoderWorkerRef.current = encoderWorker;
 
-    // Buffer to accumulate PCM samples for Opus frame (40ms at 16000Hz = 640 samples)
-    let pcmBuffer = new Float32Array(0);
-    const FRAME_SIZE = 640;
-
     encoderWorker.onmessage = (e) => {
-      // Opus-encoded data from the worker
-      if (e.data instanceof ArrayBuffer && e.data.byteLength > 0) {
+      console.log("Encoder worker response:", typeof e.data, e.data?.command, e.data?.byteLength);
+      if (e.data && e.data.command === "page" && e.data.page) {
+        onAudioRef.current(e.data.page);
+      } else if (e.data instanceof ArrayBuffer && e.data.byteLength > 0) {
         onAudioRef.current(e.data);
       }
     };
+
+    let pcmBuffer = new Float32Array(0);
+    const FRAME_SIZE = 640;
 
     // Initialize encoder
     encoderWorker.postMessage({
