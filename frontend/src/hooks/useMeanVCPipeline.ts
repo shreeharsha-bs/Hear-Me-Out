@@ -84,8 +84,7 @@ export function useMeanVCPipeline(
     const vcDest = audioCtx.createMediaStreamDestination();
 
     // 5. Connect to MeanVC WS
-    const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const meanvcUrl = `${wsProtocol}//${MEANVC_HOST}:5002/api/meanvc/stream?target_id=${state.vcTargetId}&steps=8&source_sr=${audioCtx.sampleRate}`;
+    const meanvcUrl = `wss://${MEANVC_HOST}:5002/api/meanvc/stream?target_id=${state.vcTargetId}&steps=8&source_sr=${audioCtx.sampleRate}`;
     const meanvcWs = new WebSocket(meanvcUrl);
     meanvcWsRef.current = meanvcWs;
 
