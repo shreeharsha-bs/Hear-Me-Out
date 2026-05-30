@@ -110,12 +110,15 @@ const source = audioCtx.createMediaStreamSource(stream);
     const FRAME_SIZE = 640; // 40ms at 16000Hz
     let msgCount = 0;
     let encoder: AudioEncoder | null = null;
+    let encodeCount = 0;
 
     try {
       encoder = new AudioEncoder({
         output: (chunk) => {
           const buf = new ArrayBuffer(chunk.byteLength);
           chunk.copyTo(buf);
+          encodeCount++;
+          if (encodeCount <= 3) console.log("[MeanVC] Opus frame sent, bytes:", buf.byteLength);
           onAudioRef.current(buf);
         },
         error: (e) => console.error("[MeanVC] Encoder error:", e),
@@ -126,7 +129,7 @@ const source = audioCtx.createMediaStreamSource(stream);
         numberOfChannels: 1,
         bitrate: 64000,
       });
-      console.log("[MeanVC] AudioEncoder configured");
+      console.log("[MeanVC] AudioEncoder configured, state:", encoder.state);
     } catch (e: any) {
       console.error("[MeanVC] AudioEncoder init failed:", e.message);
     }
@@ -143,17 +146,21 @@ const source = audioCtx.createMediaStreamSource(stream);
       merged.set(float32, pcmBuffer.length);
       let offset = 0;
       while (offset + FRAME_SIZE <= merged.length) {
-        if (!encoder) break;
-        const frame = new AudioData({
-          format: "f32-planar",
-          sampleRate: 16000,
-          numberOfFrames: FRAME_SIZE,
-          numberOfChannels: 1,
-          timestamp: 0,
-          data: merged.slice(offset, offset + FRAME_SIZE),
-        });
-        encoder.encode(frame);
-        frame.close();
+        if (!encoder || encoder.state !== "configured") break;
+        try {
+          const frame = new AudioData({
+            format: "f32-planar",
+            sampleRate: 16000,
+            numberOfFrames: FRAME_SIZE,
+            numberOfChannels: 1,
+            timestamp: 0,
+            data: merged.slice(offset, offset + FRAME_SIZE),
+          });
+          encoder.encode(frame);
+          frame.close();
+        } catch (e: any) {
+          if (msgCount <= 3) console.error("[MeanVC] AudioData encode error:", e.message);
+        }
         offset += FRAME_SIZE;
       }
       pcmBuffer = merged.slice(offset);
