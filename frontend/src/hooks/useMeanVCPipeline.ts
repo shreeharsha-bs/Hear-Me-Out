@@ -26,6 +26,8 @@ export function useMeanVCPipeline(
   const pcmStreamRef = useRef<MediaStream | null>(null);
   const pcmContextRef = useRef<AudioContext | null>(null);
   const encoderWorkerRef = useRef<Worker | null>(null);
+  const onAudioRef = useRef(onPersonaplexAudio);
+  onAudioRef.current = onPersonaplexAudio;
 
   const uploadTarget = useCallback(async (file: File) => {
     setState(s => ({ ...s, vcTargetFile: file.name, vcStatus: "Loading target voice..." }));
@@ -90,7 +92,7 @@ export function useMeanVCPipeline(
     encoderWorker.onmessage = (e) => {
       // Opus-encoded data from the worker
       if (e.data instanceof ArrayBuffer && e.data.byteLength > 0) {
-        onPersonaplexAudio(e.data);
+        onAudioRef.current(e.data);
       }
     };
 
@@ -145,7 +147,7 @@ export function useMeanVCPipeline(
 
     meanvcWs.onclose = () => setState(s => ({ ...s, vcStatus: "MeanVC disconnected" }));
     meanvcWs.onerror = () => setState(s => ({ ...s, vcStatus: "MeanVC WebSocket error" }));
-  }, [state.vcTargetId, onPersonaplexAudio]);
+  }, [state.vcTargetId]);
 
   const stopVCStream = useCallback(() => {
     meanvcWsRef.current?.close();
