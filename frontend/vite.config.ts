@@ -38,6 +38,7 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true,
           secure: false,
           ws: true,
+          rewrite: (path) => path.replace(/^\/meanvc/, ''),
         },
       },
     },
