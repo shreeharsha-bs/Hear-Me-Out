@@ -120,9 +120,10 @@ const source = audioCtx.createMediaStreamSource(stream);
       merged.set(float32, pcmBuffer.length);
       let offset = 0;
       while (offset + FRAME_SIZE <= merged.length) {
+        const chunk = merged.slice(offset, offset + FRAME_SIZE);
+        const chunkCopy = new Float32Array(chunk);
         encoderWorker.postMessage(
-          { command: "encode", buffers: [merged.slice(offset, offset + FRAME_SIZE).buffer] },
-          [merged.slice(offset, offset + FRAME_SIZE).buffer],
+          { command: "encode", buffers: [chunkCopy.buffer] },
         );
         offset += FRAME_SIZE;
       }
@@ -130,6 +131,7 @@ const source = audioCtx.createMediaStreamSource(stream);
     });
 
     encoderWorker.onmessage = (e) => {
+      console.log("[MeanVC] Encoder response:", e.data?.command, e.data?.byteLength);
       if (e.data && e.data.command === "page" && e.data.page) {
         onAudioRef.current(e.data.page);
       } else if (e.data instanceof ArrayBuffer && e.data.byteLength > 0) {
