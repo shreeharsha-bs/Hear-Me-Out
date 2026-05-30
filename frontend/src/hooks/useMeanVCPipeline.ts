@@ -1,13 +1,7 @@
 import { useState, useRef, useCallback } from "react";
 import { MEANVC_HOST } from "@/lib/config";
 
-declare class Recorder {
-  constructor(opts: Record<string, unknown>);
-  start(stream?: MediaStream): Promise<void>;
-  stop(): void;
-  setRecordingGain(gain: number): void;
-  ondataavailable: ((buf: ArrayBuffer) => void) | null;
-}
+declare var Recorder: any;
 
 export interface MeanVCPipelineState {
   vcEnabled: boolean;
@@ -19,7 +13,6 @@ export interface MeanVCPipelineState {
 
 export function useMeanVCPipeline(
   onPersonaplexAudio: (data: ArrayBuffer) => void,
-  onUserTranscript: (text: string) => void,
 ) {
   const [state, setState] = useState<MeanVCPipelineState>({
     vcEnabled: false,
@@ -32,8 +25,7 @@ export function useMeanVCPipeline(
   const meanvcWsRef = useRef<WebSocket | null>(null);
   const pcmStreamRef = useRef<MediaStream | null>(null);
   const pcmContextRef = useRef<AudioContext | null>(null);
-  const vcRecorderRef = useRef<Recorder | null>(null);
-  const speechWsRef = useRef<WebSocket | null>(null);
+  const encoderWorkerRef = useRef<Worker | null>(null);
 
   const uploadTarget = useCallback(async (file: File) => {
     setState(s => ({ ...s, vcTargetFile: file.name, vcStatus: "Loading target voice..." }));
@@ -72,64 +64,83 @@ export function useMeanVCPipeline(
     });
     pcmStreamRef.current = stream;
 
-    // 2. AudioContext for MeanVC output
+    // 2. AudioContext
     const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
     pcmContextRef.current = audioCtx;
 
-    // 3. ScriptProcessor for mic PCM capture
+    // 3. ScriptProcessor for mic PCM
     const source = audioCtx.createMediaStreamSource(stream);
     const processor = audioCtx.createScriptProcessor(2048, 1, 1);
 
-    // 4. MediaStreamDestination for VC output → OpusRecorder
-    const vcDest = audioCtx.createMediaStreamDestination();
-
-    // 5. Connect to MeanVC WS
+    // 4. Connect to MeanVC WS
     const meanvcUrl = `wss://${MEANVC_HOST}:5002/api/meanvc/stream?target_id=${state.vcTargetId}&steps=8&source_sr=${audioCtx.sampleRate}`;
     const meanvcWs = new WebSocket(meanvcUrl);
     meanvcWsRef.current = meanvcWs;
 
-    let vcOutputTime = audioCtx.currentTime + 0.5;
+    // 5. Create encoder Worker for Opus encoding of MeanVC output
+    const encoderWorker = new Worker(
+      "https://cdn.jsdelivr.net/npm/opus-recorder@8.0.5/dist/encoderWorker.min.js",
+    );
+    encoderWorkerRef.current = encoderWorker;
+
+    // Buffer to accumulate PCM samples for Opus frame (40ms at 16000Hz = 640 samples)
+    let pcmBuffer = new Float32Array(0);
+    const FRAME_SIZE = 640;
+
+    encoderWorker.onmessage = (e) => {
+      // Opus-encoded data from the worker
+      if (e.data instanceof ArrayBuffer && e.data.byteLength > 0) {
+        onPersonaplexAudio(e.data);
+      }
+    };
+
+    // Initialize encoder
+    encoderWorker.postMessage({
+      command: "init",
+      config: {
+        encoderApplication: 2049,
+        encoderFrameSize: 40,     // ms
+        encoderSampleRate: 16000,
+        maxFramesPerPage: 1,
+        numberOfChannels: 1,
+        streamPages: true,
+      },
+    });
+
+    encoderWorker.onerror = () => {
+      setState(s => ({ ...s, vcStatus: "Encoder error" }));
+    };
 
     meanvcWs.onmessage = async (event) => {
       if (typeof event.data === "string") return;
       const float32 = new Float32Array(await (event.data as Blob).arrayBuffer());
       if (float32.length === 0) return;
-      const buf = audioCtx.createBuffer(1, float32.length, 16000);
-      buf.getChannelData(0).set(float32);
-      const bufSource = audioCtx.createBufferSource();
-      bufSource.buffer = buf;
-      bufSource.connect(vcDest);
-      bufSource.start(vcOutputTime);
-      vcOutputTime = Math.max(vcOutputTime + buf.duration, audioCtx.currentTime + 0.01);
-    };
 
-    // 6. OpusRecorder captures from VC output → PersonaPlex
-    const vcRecorder = new Recorder({
-      encoderPath: "https://cdn.jsdelivr.net/npm/opus-recorder@latest/dist/encoderWorker.min.js",
-      streamPages: true,
-      encoderApplication: 2049,
-      encoderFrameSize: 40,
-      encoderSampleRate: 16000,
-      maxFramesPerPage: 1,
-      numberOfChannels: 1,
-    });
-    vcRecorderRef.current = vcRecorder;
+      // Accumulate samples, send full Opus frames
+      const merged = new Float32Array(pcmBuffer.length + float32.length);
+      merged.set(pcmBuffer, 0);
+      merged.set(float32, pcmBuffer.length);
 
-    vcRecorder.ondataavailable = async (arrayBuffer: ArrayBuffer) => {
-      onPersonaplexAudio(arrayBuffer);
+      let offset = 0;
+      while (offset + FRAME_SIZE <= merged.length) {
+        encoderWorker.postMessage(
+          { command: "encode", buffers: [merged.slice(offset, offset + FRAME_SIZE).buffer] },
+          [merged.slice(offset, offset + FRAME_SIZE).buffer],
+        );
+        offset += FRAME_SIZE;
+      }
+      pcmBuffer = merged.slice(offset);
     };
 
     meanvcWs.onopen = () => {
       setState(s => ({ ...s, vcStatus: "VC pipeline active - connected" }));
-      vcRecorder.start(vcDest.stream).then(() => {
-        processor.onaudioprocess = (e) => {
-          if (meanvcWs.readyState === WebSocket.OPEN) {
-            meanvcWs.send(e.inputBuffer.getChannelData(0).buffer);
-          }
-        };
-        source.connect(processor);
-        processor.connect(audioCtx.destination);
-      });
+      processor.onaudioprocess = (e) => {
+        if (meanvcWs.readyState === WebSocket.OPEN) {
+          meanvcWs.send(e.inputBuffer.getChannelData(0).buffer);
+        }
+      };
+      source.connect(processor);
+      processor.connect(audioCtx.destination);
     };
 
     meanvcWs.onclose = () => setState(s => ({ ...s, vcStatus: "MeanVC disconnected" }));
@@ -139,8 +150,8 @@ export function useMeanVCPipeline(
   const stopVCStream = useCallback(() => {
     meanvcWsRef.current?.close();
     meanvcWsRef.current = null;
-    vcRecorderRef.current?.stop();
-    vcRecorderRef.current = null;
+    encoderWorkerRef.current?.terminate();
+    encoderWorkerRef.current = null;
     pcmStreamRef.current?.getTracks().forEach(t => t.stop());
     pcmStreamRef.current = null;
     pcmContextRef.current?.close();
@@ -158,6 +169,5 @@ export function useMeanVCPipeline(
     uploadTarget,
     startVCStream,
     stopVCStream,
-    vcRecorderRef,
   };
 }

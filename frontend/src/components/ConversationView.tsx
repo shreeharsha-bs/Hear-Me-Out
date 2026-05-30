@@ -51,7 +51,6 @@ export function ConversationView({ ws, recorder }: Props) {
 
   const vcPipeline = useMeanVCPipeline(
     (data) => ws.sendAudio(data),
-    (text) => ws.addUserTranscript(text),
   )
   const { vcEnabled, vcTargetId, vcStreaming, startVCStream, stopVCStream: vcStop } = vcPipeline
   const { isRecording, start: startRecorder } = recorder
