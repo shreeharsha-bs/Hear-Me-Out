@@ -68,6 +68,8 @@ export function useMeanVCPipeline(
     // 2. AudioContext
     const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
     pcmContextRef.current = audioCtx;
+    console.log("[MeanVC] AudioContext state:", audioCtx.state);
+    await audioCtx.resume();
 
     // 3. ScriptProcessor for mic PCM
 const source = audioCtx.createMediaStreamSource(stream);
