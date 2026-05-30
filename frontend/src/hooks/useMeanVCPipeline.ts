@@ -86,7 +86,7 @@ export function useMeanVCPipeline(
     meanvcWs.onclose = (e) => console.log("[MeanVC] WebSocket CLOSE:", e.code, e.reason);
     meanvcWs.onerror = (e) => console.error("[MeanVC] WebSocket ERROR");
 
-    // 5. Create encoder Worker for Opus encoding of MeanVC output
+    // 5. Create encoder Worker
     const encoderWorker = new Worker(
       "https://cdn.jsdelivr.net/npm/opus-recorder@8.0.5/dist/encoderWorker.min.js",
     );
@@ -143,6 +143,7 @@ export function useMeanVCPipeline(
     };
 
     meanvcWs.onopen = () => {
+      console.log("[MeanVC] WebSocket OPEN - starting mic capture");
       setState(s => ({ ...s, vcStatus: "VC pipeline active - connected" }));
       processor.onaudioprocess = (e) => {
         if (meanvcWs.readyState === WebSocket.OPEN) {
@@ -153,8 +154,14 @@ export function useMeanVCPipeline(
       processor.connect(audioCtx.destination);
     };
 
-    meanvcWs.onclose = () => setState(s => ({ ...s, vcStatus: "MeanVC disconnected" }));
-    meanvcWs.onerror = () => setState(s => ({ ...s, vcStatus: "MeanVC WebSocket error" }));
+    meanvcWs.onclose = (e) => {
+      console.log("[MeanVC] WebSocket CLOSE:", e.code, e.reason);
+      setState(s => ({ ...s, vcStatus: "MeanVC disconnected" }));
+    };
+    meanvcWs.onerror = () => {
+      console.error("[MeanVC] WebSocket ERROR");
+      setState(s => ({ ...s, vcStatus: "MeanVC WebSocket error" }));
+    };
   }, [state.vcTargetId]);
 
   const stopVCStream = useCallback(() => {
