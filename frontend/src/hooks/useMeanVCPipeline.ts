@@ -107,26 +107,8 @@ const source = audioCtx.createMediaStreamSource(stream);
       setState(s => ({ ...s, vcStatus: "MeanVC WebSocket error" }));
     });
 
-    // 5b. Create Recorder to encode MeanVC output → Ogg Opus → PersonaPlex
-    console.log("[MeanVC] Creating Recorder for Ogg Opus encoding...");
-    const vcRecorder = new Recorder({
-      encoderPath: "https://cdn.jsdelivr.net/npm/opus-recorder@latest/dist/encoderWorker.min.js",
-      streamPages: true,
-      encoderApplication: 2049,
-      encoderFrameSize: 40,
-      encoderSampleRate: 16000,
-      maxFramesPerPage: 1,
-      numberOfChannels: 1,
-      monitorGain: 0,
-    });
-    vcRecorderRef.current = vcRecorder;
-
-    vcRecorder.ondataavailable = (arrayBuffer: ArrayBuffer) => {
-      onAudioRef.current(arrayBuffer);
-    };
-
+    // 5a. Set message handler IMMEDIATELY before any await
     let vcOutputTime = audioCtx.currentTime + 0.5;
-
     meanvcWs.addEventListener("message", (event: MessageEvent) => {
       if (typeof event.data === "string") return;
       const float32 = new Float32Array(event.data);
@@ -141,8 +123,23 @@ const source = audioCtx.createMediaStreamSource(stream);
       vcOutputTime = Math.max(vcOutputTime + buf.duration, audioCtx.currentTime + 0.01);
     });
 
-    let pcmBuffer = new Float32Array(0);
-    let msgCount = 0;
+    // 5b. Create Recorder to encode MeanVC output → Ogg Opus → PersonaPlex
+    console.log("[MeanVC] Creating Recorder for Ogg Opus encoding...");
+    const vcRecorder = new Recorder({
+      encoderPath: "https://cdn.jsdelivr.net/npm/opus-recorder@latest/dist/encoderWorker.min.js",
+      streamPages: true,
+      encoderApplication: 2049,
+      encoderFrameSize: 40,
+      encoderSampleRate: 16000,
+      maxFramesPerPage: 1,
+      numberOfChannels: 1,
+      monitorGain: 0,
+    });
+    vcRecorderRef.current = vcRecorder;
+
+vcRecorder.ondataavailable = (arrayBuffer: ArrayBuffer) => {
+      onAudioRef.current(arrayBuffer);
+    };
 
     // 5c. Start the Recorder on the VC output stream
     try {
