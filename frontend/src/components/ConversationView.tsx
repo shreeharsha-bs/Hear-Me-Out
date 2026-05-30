@@ -49,10 +49,7 @@ export function ConversationView({ ws, recorder }: Props) {
   const micClicked = useRef(false)
   const transcribed = useRef(false)
 
-  const vcPipeline = useMeanVCPipeline(
-    (data) => ws.sendAudio(data),
-    (text) => ws.addUserTranscript(text),
-  )
+  const { vcEnabled, vcTargetId, vcStreaming, startVCStream, stopVCStream: vcStop } = vcPipeline
   const [diarized, setDiarized] = useState<DiarizedTurn[] | null>(null)
   const [userWavUrl, setUserWavUrl] = useState<string | null>(null)
   const [personaplexWavUrl, setPersonaplexWavUrl] = useState<string | null>(null)
@@ -84,29 +81,29 @@ export function ConversationView({ ws, recorder }: Props) {
   }, [ws])
 
   const stopConversation = useCallback(() => {
-    if (vcPipeline.vcStreaming) {
-      vcPipeline.stopVCStream()
+    if (vcStreaming) {
+      vcStop()
     }
     recorder.stop()
     ws.disconnect()
     micClicked.current = false
-  }, [recorder, ws, vcPipeline])
+  }, [recorder, ws, vcStreaming, vcStop])
 
   useEffect(() => {
-    if (ws.handshakeReceived && micClicked.current && !recorder.isRecording) {
-      if (vcPipeline.vcEnabled && vcPipeline.vcTargetId) {
-        vcPipeline.startVCStream().catch(() => {
+    if (ws.handshakeReceived && micClicked.current && !isRecording) {
+      if (vcEnabled && vcTargetId) {
+        startVCStream().catch(() => {
           ws.disconnect()
           micClicked.current = false
         })
       } else {
-        recorder.start().catch(() => {
+        startRecorder().catch(() => {
           ws.disconnect()
           micClicked.current = false
         })
       }
     }
-  }, [ws.handshakeReceived, recorder, ws, vcPipeline])
+  }, [ws.handshakeReceived, isRecording, ws, vcEnabled, vcTargetId, startVCStream, startRecorder])
 
   // Route PersonaPlex playback into merged capture once recording starts
   useEffect(() => {
