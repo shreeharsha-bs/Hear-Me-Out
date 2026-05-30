@@ -106,16 +106,12 @@ const source = audioCtx.createMediaStreamSource(stream);
       setState(s => ({ ...s, vcStatus: "MeanVC WebSocket error" }));
     });
 
-    // 6. Create encoder Worker and set up encoding pipeline
-    const encoderWorker = new Worker(
-      "https://cdn.jsdelivr.net/npm/opus-recorder@8.0.5/dist/encoderWorker.min.js",
-    );
-    encoderWorkerRef.current = encoderWorker;
-
+    // 5b. Declare encoderWorker with let BEFORE message handler (for hoisting)
+    let encoderWorker: Worker;
     let pcmBuffer = new Float32Array(0);
     const FRAME_SIZE = 640;
-
     let msgCount = 0;
+
     meanvcWs.addEventListener("message", (event: MessageEvent) => {
       msgCount++;
       if (msgCount <= 3) console.log("[MeanVC] Received message", msgCount, "bytes:", (event.data as ArrayBuffer)?.byteLength);
@@ -128,15 +124,20 @@ const source = audioCtx.createMediaStreamSource(stream);
       merged.set(float32, pcmBuffer.length);
       let offset = 0;
       while (offset + FRAME_SIZE <= merged.length) {
-        const chunk = merged.slice(offset, offset + FRAME_SIZE);
-        const chunkCopy = new Float32Array(chunk);
+        if (!encoderWorker) break;
         encoderWorker.postMessage(
-          { command: "encode", buffers: [chunkCopy.buffer] },
+          { command: "encode", buffers: [new Float32Array(merged.slice(offset, offset + FRAME_SIZE)).buffer] },
         );
         offset += FRAME_SIZE;
       }
       pcmBuffer = merged.slice(offset);
     });
+
+    // 6. Create encoder Worker (message handler already in place)
+    encoderWorker = new Worker(
+      "https://cdn.jsdelivr.net/npm/opus-recorder@8.0.5/dist/encoderWorker.min.js",
+    );
+    encoderWorkerRef.current = encoderWorker;
 
     encoderWorker.onmessage = (e) => {
       console.log("[MeanVC] Encoder response:", e.data?.command, e.data?.byteLength);
