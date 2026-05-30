@@ -73,7 +73,7 @@ export function useMeanVCPipeline(
     pcmContextRef.current = audioCtx;
 
     // 3. ScriptProcessor for mic PCM
-    const source = audioCtx.createMediaStreamSource(stream);
+const source = audioCtx.createMediaStreamSource(stream);
     const processor = audioCtx.createScriptProcessor(2048, 1, 1);
 
     // 4. Connect to MeanVC WS
@@ -82,66 +82,16 @@ export function useMeanVCPipeline(
     const meanvcWs = new WebSocket(meanvcUrl);
     meanvcWsRef.current = meanvcWs;
 
-    meanvcWs.onopen = () => console.log("[MeanVC] WebSocket OPEN");
-    meanvcWs.onclose = (e) => console.log("[MeanVC] WebSocket CLOSE:", e.code, e.reason);
-    meanvcWs.onerror = (e) => console.error("[MeanVC] WebSocket ERROR");
-
     // 5. Create encoder Worker
     const encoderWorker = new Worker(
       "https://cdn.jsdelivr.net/npm/opus-recorder@8.0.5/dist/encoderWorker.min.js",
     );
     encoderWorkerRef.current = encoderWorker;
 
-    encoderWorker.onmessage = (e) => {
-      console.log("Encoder worker response:", typeof e.data, e.data?.command, e.data?.byteLength);
-      if (e.data && e.data.command === "page" && e.data.page) {
-        onAudioRef.current(e.data.page);
-      } else if (e.data instanceof ArrayBuffer && e.data.byteLength > 0) {
-        onAudioRef.current(e.data);
-      }
-    };
-
     let pcmBuffer = new Float32Array(0);
     const FRAME_SIZE = 640;
 
-    // Initialize encoder
-    encoderWorker.postMessage({
-      command: "init",
-      config: {
-        encoderApplication: 2049,
-        encoderFrameSize: 40,     // ms
-        encoderSampleRate: 16000,
-        maxFramesPerPage: 1,
-        numberOfChannels: 1,
-        streamPages: true,
-      },
-    });
-
-    encoderWorker.onerror = () => {
-      setState(s => ({ ...s, vcStatus: "Encoder error" }));
-    };
-
-    meanvcWs.onmessage = async (event) => {
-      if (typeof event.data === "string") return;
-      const float32 = new Float32Array(await (event.data as Blob).arrayBuffer());
-      if (float32.length === 0) return;
-
-      // Accumulate samples, send full Opus frames
-      const merged = new Float32Array(pcmBuffer.length + float32.length);
-      merged.set(pcmBuffer, 0);
-      merged.set(float32, pcmBuffer.length);
-
-      let offset = 0;
-      while (offset + FRAME_SIZE <= merged.length) {
-        encoderWorker.postMessage(
-          { command: "encode", buffers: [merged.slice(offset, offset + FRAME_SIZE).buffer] },
-          [merged.slice(offset, offset + FRAME_SIZE).buffer],
-        );
-        offset += FRAME_SIZE;
-      }
-      pcmBuffer = merged.slice(offset);
-    };
-
+    // 6. Set ALL MeanVC WebSocket handlers IMMEDIATELY
     meanvcWs.onopen = () => {
       console.log("[MeanVC] WebSocket OPEN - starting mic capture");
       setState(s => ({ ...s, vcStatus: "VC pipeline active - connected" }));
@@ -162,6 +112,50 @@ export function useMeanVCPipeline(
       console.error("[MeanVC] WebSocket ERROR");
       setState(s => ({ ...s, vcStatus: "MeanVC WebSocket error" }));
     };
+
+    meanvcWs.onmessage = async (event) => {
+      if (typeof event.data === "string") return;
+      const float32 = new Float32Array(await (event.data as Blob).arrayBuffer());
+      if (float32.length === 0) return;
+
+      const merged = new Float32Array(pcmBuffer.length + float32.length);
+      merged.set(pcmBuffer, 0);
+      merged.set(float32, pcmBuffer.length);
+      let offset = 0;
+      while (offset + FRAME_SIZE <= merged.length) {
+        encoderWorker.postMessage(
+          { command: "encode", buffers: [merged.slice(offset, offset + FRAME_SIZE).buffer] },
+          [merged.slice(offset, offset + FRAME_SIZE).buffer],
+        );
+        offset += FRAME_SIZE;
+      }
+      pcmBuffer = merged.slice(offset);
+    };
+
+    // 7. Set up encoder Worker handlers
+    encoderWorker.onmessage = (e) => {
+      if (e.data && e.data.command === "page" && e.data.page) {
+        onAudioRef.current(e.data.page);
+      } else if (e.data instanceof ArrayBuffer && e.data.byteLength > 0) {
+        onAudioRef.current(e.data);
+      }
+    };
+
+    encoderWorker.onerror = () => {
+      setState(s => ({ ...s, vcStatus: "Encoder error" }));
+    };
+
+    encoderWorker.postMessage({
+      command: "init",
+      config: {
+        encoderApplication: 2049,
+        encoderFrameSize: 40,
+        encoderSampleRate: 16000,
+        maxFramesPerPage: 1,
+        numberOfChannels: 1,
+        streamPages: true,
+      },
+    });
   }, [state.vcTargetId]);
 
   const stopVCStream = useCallback(() => {
