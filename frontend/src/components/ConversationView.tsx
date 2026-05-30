@@ -97,7 +97,7 @@ export function ConversationView({ ws, recorder }: Props) {
     if (wasVC) {
       console.log("[ConvVC] Processing VC audio for post-conversation UI...")
       ;(async () => {
-        const vcWav = getUserAudioWav()
+        const vcWav = await getUserAudioWav()
         console.log("[ConvVC] VC user audio WAV:", vcWav?.size, "bytes")
         if (!vcWav) return
         const vcUrl = URL.createObjectURL(vcWav)
