@@ -6,12 +6,15 @@ import { Badge } from "@/components/ui/badge"
 import { Spinner } from "@/components/ui/spinner"
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Mic, MicOff, ChevronRight, MessageSquareText, AlertCircle, Download, Play, Pause } from "lucide-react"
+import { Mic, MicOff, ChevronRight, MessageSquareText, AlertCircle, Download, Play, Pause, Wand2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { webmToWavBlob, wavBlobToPcm, mergeFloat32s, createWavFile } from "@/lib/audio"
 import type { useRecorder } from "@/hooks/useRecorder"
 import type { useWebSocket } from "@/hooks/useWebSocket"
+import { useMeanVCPipeline } from "@/hooks/useMeanVCPipeline"
 import { transcribeRecording } from "@/hooks/useWebSocket"
+import { Label } from "@/components/ui/label"
+import { Switch } from "@/components/ui/switch"
 
 type WsState = ReturnType<typeof useWebSocket>
 type RecorderState = ReturnType<typeof useRecorder>
@@ -45,6 +48,11 @@ function formatTime(seconds: number): string {
 export function ConversationView({ ws, recorder }: Props) {
   const micClicked = useRef(false)
   const transcribed = useRef(false)
+
+  const vcPipeline = useMeanVCPipeline(
+    (data) => ws.sendAudio(data),
+    (text) => ws.addUserTranscript(text),
+  )
   const [diarized, setDiarized] = useState<DiarizedTurn[] | null>(null)
   const [userWavUrl, setUserWavUrl] = useState<string | null>(null)
   const [personaplexWavUrl, setPersonaplexWavUrl] = useState<string | null>(null)
@@ -76,19 +84,29 @@ export function ConversationView({ ws, recorder }: Props) {
   }, [ws])
 
   const stopConversation = useCallback(() => {
+    if (vcPipeline.vcStreaming) {
+      vcPipeline.stopVCStream()
+    }
     recorder.stop()
     ws.disconnect()
     micClicked.current = false
-  }, [recorder, ws])
+  }, [recorder, ws, vcPipeline])
 
   useEffect(() => {
     if (ws.handshakeReceived && micClicked.current && !recorder.isRecording) {
-      recorder.start().catch(() => {
-        ws.disconnect()
-        micClicked.current = false
-      })
+      if (vcPipeline.vcEnabled && vcPipeline.vcTargetId) {
+        vcPipeline.startVCStream().catch(() => {
+          ws.disconnect()
+          micClicked.current = false
+        })
+      } else {
+        recorder.start().catch(() => {
+          ws.disconnect()
+          micClicked.current = false
+        })
+      }
     }
-  }, [ws.handshakeReceived, recorder, ws])
+  }, [ws.handshakeReceived, recorder, ws, vcPipeline])
 
   // Route PersonaPlex playback into merged capture once recording starts
   useEffect(() => {
@@ -388,10 +406,42 @@ export function ConversationView({ ws, recorder }: Props) {
 
             <div className="flex flex-nowrap items-center justify-center gap-1">
               <PipelinePill>Your voice</PipelinePill>
+              {vcPipeline.vcEnabled && vcPipeline.vcTargetId && (
+                <>
+                  <ChevronRight className="size-2.5 shrink-0 text-muted-foreground/50" />
+                  <PipelinePill>MeanVC</PipelinePill>
+                </>
+              )}
               <ChevronRight className="size-2.5 shrink-0 text-muted-foreground/50" />
               <PipelinePill>PersonaPlex</PipelinePill>
               <ChevronRight className="size-2.5 shrink-0 text-muted-foreground/50" />
               <PipelinePill>Response</PipelinePill>
+            </div>
+
+            {/* MeanVC Voice Conversion Pipeline */}
+            <div className="w-full rounded-lg border border-purple-500/30 bg-purple-500/5 p-2.5 space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Wand2 className="size-3.5 text-purple-400" />
+                  <span className="text-xs font-medium text-purple-300">Voice Conversion</span>
+                </div>
+                <Switch checked={vcPipeline.vcEnabled} onCheckedChange={vcPipeline.setEnabled} />
+              </div>
+              {vcPipeline.vcEnabled && (
+                <>
+                  <input
+                    type="file"
+                    accept="audio/wav,.wav"
+                    onChange={(e) => { const f = e.target.files?.[0]; if (f) vcPipeline.uploadTarget(f); }}
+                    className="w-full text-[10px] text-muted-foreground file:mr-2 file:py-0.5 file:px-2 file:rounded file:bg-purple-600 file:text-white file:border-0 hover:file:bg-purple-500"
+                  />
+                  {vcPipeline.vcStatus && (
+                    <p className={`text-[10px] ${vcPipeline.vcStatus.includes('Error') ? 'text-red-400' : 'text-green-400'}`}>
+                      {vcPipeline.vcStatus}
+                    </p>
+                  )}
+                </>
+              )}
             </div>
 
             <Badge variant={hasError ? "destructive" : isConnected ? "default" : "secondary"} className="text-[10px]">

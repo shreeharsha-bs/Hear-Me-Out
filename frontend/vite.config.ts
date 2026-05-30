@@ -13,18 +13,18 @@ export default defineConfig({
     port: 3000,
     proxy: {
       '/api/chat': {
-        target: 'https://130.237.3.103:8000',
+        target: process.env.VITE_PERSONAPLEX_URL || 'http://localhost:8000',
         changeOrigin: true,
         secure: false,
         ws: true,
       },
       '/api': {
-        target: 'https://130.237.3.103:5001',
+        target: process.env.VITE_API_URL || 'http://localhost:5001',
         changeOrigin: true,
         secure: false,
       },
       '/recordings': {
-        target: 'https://130.237.3.103:5001',
+        target: process.env.VITE_API_URL || 'http://localhost:5001',
         changeOrigin: true,
         secure: false,
       },

@@ -15,7 +15,16 @@ from urllib.parse import urlencode
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 PROJECT_DIR = SCRIPT_DIR.parent
-FRONTEND_DIR = PROJECT_DIR / "src" / "frontend"
+FRONTEND_DIR = PROJECT_DIR / "frontend" / "dist"
+
+
+# Check if dist exists
+if not (FRONTEND_DIR / "index.html").exists():
+    print("frontend/dist/ not found. Build the Vite frontend first:")
+    print("  cd frontend && npm run build")
+    print("\nOr for development with hot-reload:")
+    print("  cd frontend && npm run dev")
+    sys.exit(1)
 
 
 def load_dotenv():
