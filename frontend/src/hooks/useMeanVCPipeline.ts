@@ -107,7 +107,7 @@ const source = audioCtx.createMediaStreamSource(stream);
 
     // 5b. Set up native AudioEncoder (WebCodecs) for Opus encoding
     let pcmBuffer = new Float32Array(0);
-    const FRAME_SIZE = 640; // 40ms at 16000Hz
+    const FRAME_SIZE = 960; // 40ms at 24000Hz
     let msgCount = 0;
     let encoder: AudioEncoder | null = null;
     let encodeCount = 0;
@@ -125,7 +125,7 @@ const source = audioCtx.createMediaStreamSource(stream);
       });
       encoder.configure({
         codec: "opus",
-        sampleRate: 16000,
+        sampleRate: 24000,
         numberOfChannels: 1,
         bitrate: 64000,
       });
@@ -150,7 +150,7 @@ const source = audioCtx.createMediaStreamSource(stream);
         try {
           const frame = new AudioData({
             format: "f32-planar",
-            sampleRate: 16000,
+            sampleRate: 24000,
             numberOfFrames: FRAME_SIZE,
             numberOfChannels: 1,
             timestamp: 0,
