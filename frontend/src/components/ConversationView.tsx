@@ -102,12 +102,46 @@ export function ConversationView({ ws, recorder }: Props) {
         if (!vcWav) return
         const vcUrl = URL.createObjectURL(vcWav)
         setUserWavUrl(vcUrl)
-        // Get PersonaPlex WAV and set merged to user audio
+        // Get PersonaPlex WAV and merge with user audio
+        let pplxWav: Blob | null = null;
         try {
-          const pplxWav = await ws.getPersonaplexWav()
+          pplxWav = await ws.getPersonaplexWav()
           if (pplxWav) setPersonaplexWavUrl(URL.createObjectURL(pplxWav))
         } catch { /* ignore */ }
-        setMergedWavUrl(vcUrl)
+        // Merge user + PP audio
+        if (vcWav && pplxWav) {
+          try {
+            const ctx = new AudioContext();
+            const [userBuf, ppBuf] = await Promise.all([
+              ctx.decodeAudioData(await vcWav.arrayBuffer()),
+              ctx.decodeAudioData(await pplxWav.arrayBuffer()),
+            ]);
+            const maxLen = Math.max(userBuf.length, ppBuf.length);
+            const merged = new Float32Array(maxLen);
+            merged.set(userBuf.getChannelData(0), 0);
+            for (let i = 0; i < ppBuf.length; i++) {
+              merged[i] = Math.max(-1, Math.min(1, merged[i] + ppBuf.getChannelData(0)[i] * 0.8));
+            }
+            const int16 = new Int16Array(merged.length);
+            for (let i = 0; i < merged.length; i++) {
+              int16[i] = Math.max(-32768, Math.min(32767, merged[i] * 32767));
+            }
+            const wav = new ArrayBuffer(44 + int16.length * 2);
+            const view = new DataView(wav);
+            const ws = (o: number, s: string) => { for (let i=0;i<s.length;i++) view.setUint8(o+i, s.charCodeAt(i)); };
+            ws(0, "RIFF"); view.setUint32(4, 36 + int16.length * 2, true);
+            ws(8, "WAVE"); ws(12, "fmt "); view.setUint32(16, 16, true);
+            view.setUint16(20, 1, true); view.setUint16(22, 1, true);
+            view.setUint32(24, userBuf.sampleRate, true); view.setUint32(28, userBuf.sampleRate * 2, true);
+            view.setUint16(32, 2, true); view.setUint16(34, 16, true);
+            ws(36, "data"); view.setUint32(40, int16.length * 2, true);
+            new Uint8Array(wav, 44).set(new Uint8Array(int16.buffer));
+            setMergedWavUrl(URL.createObjectURL(new Blob([wav], { type: "audio/wav" })));
+            ctx.close();
+          } catch { setMergedWavUrl(vcUrl); }
+        } else {
+          setMergedWavUrl(vcUrl);
+        }
         // Trigger transcription
         try {
           const result = await transcribeRecording([vcWav])
