@@ -146,7 +146,6 @@ const source = audioCtx.createMediaStreamSource(stream);
     vcRecorderRef.current = vcRecorder;
 
 vcRecorder.ondataavailable = (arrayBuffer: ArrayBuffer) => {
-      userOpusRef.current.push(arrayBuffer.slice(0));
       onAudioRef.current(arrayBuffer);
     };
 
