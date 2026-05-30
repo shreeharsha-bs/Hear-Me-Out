@@ -109,10 +109,13 @@ const source = audioCtx.createMediaStreamSource(stream);
 
     // 5a. Set message handler IMMEDIATELY before any await
     let vcOutputTime = audioCtx.currentTime + 0.5;
+    let msgRecd = 0;
     meanvcWs.addEventListener("message", (event: MessageEvent) => {
+      msgRecd++;
+      if (msgRecd <= 3) console.log("[MeanVC] Rcvd msg", msgRecd, typeof event.data, (event.data as ArrayBuffer)?.byteLength);
       if (typeof event.data === "string") return;
       const float32 = new Float32Array(event.data);
-      if (float32.length === 0) return;
+      if (float32.length === 0) { console.log("[MeanVC] Empty PCM"); return; }
       userPcmRef.current.push(new Float32Array(float32));
       const buf = audioCtx.createBuffer(1, float32.length, 16000);
       buf.getChannelData(0).set(float32);
