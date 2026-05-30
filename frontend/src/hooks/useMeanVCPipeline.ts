@@ -97,6 +97,11 @@ const source = audioCtx.createMediaStreamSource(stream);
         }
       };
       source.connect(processor);
+      // Connect processor to a silent gain node (ScriptProcessor needs a destination to fire)
+      const gainNode = audioCtx.createGain();
+      gainNode.gain.value = 0;
+      processor.connect(gainNode);
+      gainNode.connect(audioCtx.destination);
     });
     meanvcWs.addEventListener("close", (e: CloseEvent) => {
       console.log("[MeanVC] WebSocket CLOSE:", e.code, e.reason);
