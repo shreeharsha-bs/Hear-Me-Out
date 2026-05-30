@@ -137,8 +137,144 @@ const App = () => {
   const [secondAIRecording, setSecondAIRecording] = useState(null); // Second AI voice recording for comparison
   const [conversationCount, setConversationCount] = useState(0); // Track number of conversations
 
+  // MeanVC Voice Conversion Pipeline
+  const [vcEnabled, setVcEnabled] = useState(false);
+  const [vcTargetId, setVcTargetId] = useState(null);
+  const [vcTargetFile, setVcTargetFile] = useState(null);
+  const [vcStatus, setVcStatus] = useState('');
+  const meanvcWsRef = useRef(null);
+  const pcmStreamRef = useRef(null);
+  const pcmContextRef = useRef(null);
+
+  const uploadVcTarget = async (file) => {
+    if (!file) return;
+    setVcTargetFile(file.name);
+    setVcStatus('Loading target voice...');
+    const fd = new FormData();
+    fd.append('wav', file);
+    try {
+      const resp = await fetch(`https://${MEANVC_HOST}:5002/api/meanvc/load-target`, {
+        method: 'POST', body: fd,
+      });
+      const data = await resp.json();
+      if (data.target_id) {
+        setVcTargetId(data.target_id);
+        setVcStatus(`Target ready: ${file.name} (${data.duration_seconds}s)`);
+      } else {
+        setVcStatus('Error: ' + (data.error || 'unknown'));
+      }
+    } catch (e) {
+      setVcStatus('Error: ' + e.message);
+    }
+  };
+
+  // MeanVC Voice Conversion Pipeline: Mic → MeanVC → PersonaPlex
+  const startVCStreamingPipeline = async () => {
+    setVcStatus('Starting voice conversion pipeline...');
+
+    // 1. Get raw mic
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: { sampleRate: 16000, channelCount: 1, echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+    });
+    pcmStreamRef.current = stream;
+    recordingStreamRef.current = stream;
+
+    // 2. AudioContext for PCM capture + VC output playback
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+    pcmContextRef.current = audioCtx;
+
+    // 3. ScriptProcessor to capture mic PCM
+    const source = audioCtx.createMediaStreamSource(stream);
+    const processor = audioCtx.createScriptProcessor(2048, 1, 1);
+
+    // 4. MediaStreamDestination for VC output → OpusRecorder
+    const vcDest = audioCtx.createMediaStreamDestination();
+
+    // 5. Connect to MeanVC WS
+    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const meanvcUrl = `${wsProtocol}//${MEANVC_HOST}:5002/api/meanvc/stream?target_id=${vcTargetId}&steps=8&source_sr=${audioCtx.sampleRate}`;
+    const meanvcWs = new WebSocket(meanvcUrl);
+    meanvcWsRef.current = meanvcWs;
+
+    let vcOutputTime = audioCtx.currentTime + 0.5;
+
+    meanvcWs.onmessage = async (event) => {
+      if (typeof event.data === 'string') return;
+      // Got converted PCM from MeanVC → write to virtual stream
+      const float32 = new Float32Array(await event.data.arrayBuffer());
+      if (float32.length === 0) return;
+      const buf = audioCtx.createBuffer(1, float32.length, 16000);
+      buf.getChannelData(0).set(float32);
+      const bufSource = audioCtx.createBufferSource();
+      bufSource.buffer = buf;
+      bufSource.connect(vcDest);
+      bufSource.start(vcOutputTime);
+      vcOutputTime = Math.max(vcOutputTime + buf.duration, audioCtx.currentTime + 0.01);
+    };
+
+    // 6. OpusRecorder captures from VC output stream → PersonaPlex WS
+    const vcRecorder = new Recorder({
+      encoderPath: "https://cdn.jsdelivr.net/npm/opus-recorder@latest/dist/encoderWorker.min.js",
+      streamPages: true,
+      encoderApplication: 2049,
+      encoderFrameSize: 40,
+      encoderSampleRate: 16000,
+      maxFramesPerPage: 1,
+      numberOfChannels: 1,
+    });
+
+    vcRecorder.ondataavailable = async (arrayBuffer) => {
+      if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+        const tagged = new Uint8Array(arrayBuffer.byteLength + 1);
+        tagged[0] = 1;
+        tagged.set(new Uint8Array(arrayBuffer), 1);
+        await socketRef.current.send(tagged.buffer);
+      }
+    };
+
+    meanvcWs.onopen = () => {
+      setVcStatus('Connected - streaming voice conversion');
+      // Start OpusRecorder on VC output
+      vcRecorder.start(vcDest.stream).then(() => {
+        // Start sending mic PCM to MeanVC
+        processor.onaudioprocess = (e) => {
+          if (meanvcWs.readyState === WebSocket.OPEN) {
+            meanvcWs.send(e.inputBuffer.getChannelData(0).buffer);
+          }
+        };
+        source.connect(processor);
+        processor.connect(audioCtx.destination); // silence
+      });
+    };
+
+    meanvcWs.onclose = () => setVcStatus('MeanVC disconnected');
+    meanvcWs.onerror = () => setVcStatus('MeanVC WebSocket error');
+
+    // Set recorder for amplitude/mute control
+    setRecorder(vcRecorder);
+    setIsRecording(true);
+
+    // Amplitude analyzer
+    const analyzerCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const analyzer = analyzerCtx.createAnalyser();
+    analyzer.fftSize = 256;
+    analyzerCtx.createMediaStreamSource(stream).connect(analyzer);
+    const processAudio = () => {
+      const dataArray = new Uint8Array(analyzer.frequencyBinCount);
+      analyzer.getByteFrequencyData(dataArray);
+      setAmplitude(dataArray.reduce((a, b) => a + b, 0) / dataArray.length);
+      requestAnimationFrame(processAudio);
+    };
+    processAudio();
+  };
+
   // Mic Input: start the Opus recorder
   const startRecording = async () => {
+    if (vcEnabled && vcTargetId) {
+      await startVCStreamingPipeline();
+      return;
+    }
+    // Original OpusRecorder flow (no VC)
     // Reset recorded chunks and model responses for new recording
     setRecordedChunks([]);
     setRecordingAvailable(false);
@@ -218,6 +354,20 @@ const App = () => {
 
   // Stop recording and websocket connection
   const stopRecording = () => {
+    // Clean up MeanVC pipeline
+    if (meanvcWsRef.current) {
+      meanvcWsRef.current.close();
+      meanvcWsRef.current = null;
+    }
+    if (pcmContextRef.current) {
+      pcmContextRef.current.close();
+      pcmContextRef.current = null;
+    }
+    if (pcmStreamRef.current) {
+      pcmStreamRef.current.getTracks().forEach(t => t.stop());
+      pcmStreamRef.current = null;
+    }
+
     if (recorder) {
       recorder.stop();
       setIsRecording(false);
@@ -723,6 +873,27 @@ const response = await fetch(apiBase + '/api/metrics-comparison', {
                       />
                     </div>
                   </div>
+                </div>
+
+                {/* MeanVC Voice Conversion Pipeline */}
+                <div className="mt-6 p-4 bg-gray-700 rounded-lg w-full">
+                  <h3 className="text-sm font-semibold text-purple-400 mb-3">Voice Conversion Pipeline (MeanVC)</h3>
+                  <p className="text-xs text-gray-400 mb-2">Route your mic through MeanVC to speak as the target voice</p>
+                  <div className="flex items-center gap-3 mb-3">
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input type="checkbox" className="sr-only peer" checked={vcEnabled}
+                        onChange={(e) => setVcEnabled(e.target.checked)} />
+                      <div className="w-9 h-5 bg-gray-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-600"></div>
+                      <span className="ms-3 text-xs text-gray-300">{vcEnabled ? 'Enabled' : 'Disabled'}</span>
+                    </label>
+                    {vcStatus && <span className={`text-xs ${vcStatus.includes('Error') ? 'text-red-400' : 'text-green-400'}`}>{vcStatus}</span>}
+                  </div>
+                  {vcEnabled && (
+                    <div>
+                      <input type="file" accept="audio/wav,.wav" onChange={(e) => uploadVcTarget(e.target.files[0])}
+                        className="w-full text-xs text-gray-300 file:mr-4 file:py-1 file:px-3 file:rounded file:bg-purple-600 file:text-white file:border-0 hover:file:bg-purple-500" />
+                    </div>
+                  )}
                 </div>
 
                 {/* Voice Conversion Section */}
