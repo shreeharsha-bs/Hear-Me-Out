@@ -110,9 +110,9 @@ const source = audioCtx.createMediaStreamSource(stream);
     let pcmBuffer = new Float32Array(0);
     const FRAME_SIZE = 640;
 
-    meanvcWs.addEventListener("message", async (event: MessageEvent) => {
+    meanvcWs.addEventListener("message", (event: MessageEvent) => {
       if (typeof event.data === "string") return;
-      const float32 = new Float32Array(await (event.data as Blob).arrayBuffer());
+      const float32 = new Float32Array(event.data);
       if (float32.length === 0) return;
 
       const merged = new Float32Array(pcmBuffer.length + float32.length);
