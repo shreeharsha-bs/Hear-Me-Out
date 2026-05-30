@@ -52,7 +52,7 @@ export function ConversationView({ ws, recorder }: Props) {
   const vcPipeline = useMeanVCPipeline(
     (data) => ws.sendAudio(data),
   )
-  const { vcEnabled, vcTargetId, vcStreaming, startVCStream, stopVCStream: vcStop } = vcPipeline
+  const { vcEnabled, vcTargetId, vcStreaming, startVCStream, stopVCStream: vcStop, getUserAudioWav } = vcPipeline
   const { isRecording, start: startRecorder } = recorder
   const [diarized, setDiarized] = useState<DiarizedTurn[] | null>(null)
   const [userWavUrl, setUserWavUrl] = useState<string | null>(null)
@@ -85,13 +85,45 @@ export function ConversationView({ ws, recorder }: Props) {
   }, [ws])
 
   const stopConversation = useCallback(() => {
+    const wasVC = vcStreaming
     if (vcStreaming) {
       vcStop()
     }
     recorder.stop()
     ws.disconnect()
     micClicked.current = false
-  }, [recorder, ws, vcStreaming, vcStop])
+
+    // If VC was active, process VC user audio for transcription and downloads
+    if (wasVC) {
+      (async () => {
+        const vcWav = getUserAudioWav()
+        if (!vcWav) return
+        const vcUrl = URL.createObjectURL(vcWav)
+        setUserWavUrl(vcUrl)
+        // Trigger transcription with VC audio
+        try {
+          const result = await transcribeRecording([vcWav])
+          const vcTurns: DiarizedTurn[] = (result.segments || []).map(
+            (s: { start: number; end: number; text: string }) => ({
+              speaker: "user" as const, text: s.text, start: s.start, end: s.end,
+            })
+          )
+          const convStart = ws.transcripts[0]?.timestamp ?? Date.now()
+          const pplxTurns: DiarizedTurn[] = ws.transcripts.map((t, i, arr) => {
+            const prevEnd = i > 0 ? (arr[i - 1].timestamp - convStart) / 1000 : 0
+            const start = Math.max(prevEnd, (t.timestamp - convStart) / 1000 - 2)
+            return { speaker: "personaplex" as const, text: t.text, start, end: start + 2 }
+          })
+          setDiarized([...vcTurns, ...pplxTurns].sort((a, b) => a.start - b.start))
+          // Get PersonaPlex WAV
+          const pplxWav = await ws.getPersonaplexWav()
+          if (pplxWav) setPersonaplexWavUrl(URL.createObjectURL(pplxWav))
+        } catch (e) {
+          console.error("VC transcription failed:", e)
+        }
+      })()
+    }
+  }, [recorder, ws, vcStreaming, vcStop, getUserAudioWav])
 
   useEffect(() => {
     if (ws.handshakeReceived && micClicked.current && !isRecording && !vcStreaming) {

@@ -27,6 +27,7 @@ export function useMeanVCPipeline(
   const pcmContextRef = useRef<AudioContext | null>(null);
   const vcRecorderRef = useRef<Recorder | null>(null);
   const onAudioRef = useRef(onPersonaplexAudio);
+  const userPcmRef = useRef<Float32Array[]>([]);
   onAudioRef.current = onPersonaplexAudio;
 
   const uploadTarget = useCallback(async (file: File) => {
@@ -131,6 +132,7 @@ const source = audioCtx.createMediaStreamSource(stream);
       if (typeof event.data === "string") return;
       const float32 = new Float32Array(event.data);
       if (float32.length === 0) return;
+      userPcmRef.current.push(new Float32Array(float32));
       const buf = audioCtx.createBuffer(1, float32.length, 16000);
       buf.getChannelData(0).set(float32);
       const bufSource = audioCtx.createBufferSource();
@@ -166,6 +168,33 @@ const source = audioCtx.createMediaStreamSource(stream);
     setState(s => ({ ...s, vcStreaming: false, vcStatus: "" }));
   }, []);
 
+  const getUserAudioWav = useCallback((): Blob | null => {
+    const chunks = userPcmRef.current;
+    if (chunks.length === 0) return null;
+    const total = chunks.reduce((s, c) => s + c.length, 0);
+    const combined = new Float32Array(total);
+    let offset = 0;
+    for (const c of chunks) { combined.set(c, offset); offset += c.length; }
+    // Convert Float32 [-1,1] to Int16 for WAV
+    const int16 = new Int16Array(combined.length);
+    for (let i = 0; i < combined.length; i++) {
+      int16[i] = Math.max(-32768, Math.min(32767, combined[i] * 32767));
+    }
+    // Write WAV header
+    const wav = new ArrayBuffer(44 + int16.length * 2);
+    const view = new DataView(wav);
+    const writeStr = (off: number, s: string) => { for (let i=0;i<s.length;i++) view.setUint8(off+i, s.charCodeAt(i)); };
+    writeStr(0, "RIFF"); view.setUint32(4, 36 + int16.length * 2, true);
+    writeStr(8, "WAVE"); writeStr(12, "fmt "); view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true); view.setUint16(22, 1, true);
+    view.setUint32(24, 16000, true); view.setUint32(28, 32000, true);
+    view.setUint16(32, 2, true); view.setUint16(34, 16, true);
+    writeStr(36, "data"); view.setUint32(40, int16.length * 2, true);
+    new Uint8Array(wav, 44).set(new Uint8Array(int16.buffer));
+    userPcmRef.current = [];
+    return new Blob([wav], { type: "audio/wav" });
+  }, []);
+
   const setEnabled = useCallback((enabled: boolean) => {
     setState(s => ({ ...s, vcEnabled: enabled }));
   }, []);
@@ -176,5 +205,6 @@ const source = audioCtx.createMediaStreamSource(stream);
     uploadTarget,
     startVCStream,
     stopVCStream,
+    getUserAudioWav,
   };
 }
