@@ -145,7 +145,10 @@ const source = audioCtx.createMediaStreamSource(stream);
       let offset = 0;
       while (offset + FRAME_SIZE <= merged.length) {
         if (vcRecorder.encoder) {
-          vcRecorder.encoder.encode([merged.slice(offset, offset + FRAME_SIZE)]);
+          vcRecorder.encoder.postMessage({
+            command: "encode",
+            buffers: [merged.slice(offset, offset + FRAME_SIZE)],
+          });
         }
         offset += FRAME_SIZE;
       }
