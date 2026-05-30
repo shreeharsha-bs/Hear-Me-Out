@@ -27,7 +27,7 @@ export function useMeanVCPipeline(
   const pcmContextRef = useRef<AudioContext | null>(null);
   const vcRecorderRef = useRef<Recorder | null>(null);
   const onAudioRef = useRef(onPersonaplexAudio);
-  const userOpusRef = useRef<ArrayBuffer[]>([]);
+  const userPcmRef = useRef<Float32Array[]>([]);
   onAudioRef.current = onPersonaplexAudio;
 
   const uploadTarget = useCallback(async (file: File) => {
@@ -121,6 +121,7 @@ const source = audioCtx.createMediaStreamSource(stream);
       if (typeof event.data === "string") return;
       const float32 = new Float32Array(event.data);
       if (float32.length === 0) return;
+      userPcmRef.current.push(new Float32Array(float32));
       const buf = audioCtx.createBuffer(1, float32.length, 16000);
       buf.getChannelData(0).set(float32);
       const bufSource = audioCtx.createBufferSource();
@@ -172,56 +173,30 @@ vcRecorder.ondataavailable = (arrayBuffer: ArrayBuffer) => {
     setState(s => ({ ...s, vcStreaming: false, vcStatus: "" }));
   }, []);
 
-  const getUserAudioWav = useCallback(async (): Promise<Blob | null> => {
-    const packets = userOpusRef.current;
-    console.log("[MeanVC] getUserAudioWav: opus packets:", packets.length);
-    if (packets.length === 0) return null;
-
-    try {
-      const OggDecoder = (window as any)["ogg-opus-decoder"]?.OggOpusDecoder;
-      if (!OggDecoder) { console.warn("[MeanVC] OggOpusDecoder not available"); return null; }
-      const decoder = new OggDecoder();
-      await decoder.ready;
-      const allPcm: Float32Array[] = [];
-      let lastSampleRate = 16000;
-      for (const pkt of packets) {
-        try {
-          const { channelData, samplesDecoded, sampleRate } = await decoder.decode(new Uint8Array(pkt));
-          if (samplesDecoded > 0) {
-            allPcm.push(new Float32Array(channelData[0]));
-            if (sampleRate) lastSampleRate = sampleRate;
-          }
-        } catch { /* skip invalid frames */ }
-      }
-      decoder.free();
-      console.log("[MeanVC] Decoded sample rate:", lastSampleRate, "packets:", allPcm.length);
-      if (allPcm.length === 0) return null;
-      const total = allPcm.reduce((s, c) => s + c.length, 0);
-      const combined = new Float32Array(total);
-      let offset = 0;
-      for (const c of allPcm) { combined.set(c, offset); offset += c.length; }
-      const int16 = new Int16Array(combined.length);
-      for (let i = 0; i < combined.length; i++) {
-        int16[i] = Math.max(-32768, Math.min(32767, combined[i] * 32767));
-      }
-      const wav = new ArrayBuffer(44 + int16.length * 2);
-      const view = new DataView(wav);
-      const ws = (off: number, s: string) => { for (let i=0;i<s.length;i++) view.setUint8(off+i, s.charCodeAt(i)); };
-      ws(0, "RIFF"); view.setUint32(4, 36 + int16.length * 2, true);
-      ws(8, "WAVE"); ws(12, "fmt "); view.setUint32(16, 16, true);
-      view.setUint16(20, 1, true); view.setUint16(22, 1, true);
-      view.setUint32(24, lastSampleRate, true); view.setUint32(28, lastSampleRate * 2, true);
-      view.setUint16(32, 2, true); view.setUint16(34, 16, true);
-      ws(36, "data"); view.setUint32(40, int16.length * 2, true);
-      new Uint8Array(wav, 44).set(new Uint8Array(int16.buffer));
-      userOpusRef.current = [];
-      console.log("[MeanVC] Created user WAV:", wav.byteLength, "bytes from", packets.length, "opus packets");
-      return new Blob([wav], { type: "audio/wav" });
-    } catch (e: any) {
-      console.error("[MeanVC] Failed to create user WAV:", e.message);
-      userOpusRef.current = [];
-      return null;
+  const getUserAudioWav = useCallback((): Blob | null => {
+    const chunks = userPcmRef.current;
+    if (chunks.length === 0) return null;
+    const total = chunks.reduce((s, c) => s + c.length, 0);
+    const combined = new Float32Array(total);
+    let offset = 0;
+    for (const c of chunks) { combined.set(c, offset); offset += c.length; }
+    const int16 = new Int16Array(combined.length);
+    for (let i = 0; i < combined.length; i++) {
+      int16[i] = Math.max(-32768, Math.min(32767, combined[i] * 32767));
     }
+    const wav = new ArrayBuffer(44 + int16.length * 2);
+    const view = new DataView(wav);
+    const ws = (off: number, s: string) => { for (let i=0;i<s.length;i++) view.setUint8(off+i, s.charCodeAt(i)); };
+    ws(0, "RIFF"); view.setUint32(4, 36 + int16.length * 2, true);
+    ws(8, "WAVE"); ws(12, "fmt "); view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true); view.setUint16(22, 1, true);
+    view.setUint32(24, 16000, true); view.setUint32(28, 32000, true);
+    view.setUint16(32, 2, true); view.setUint16(34, 16, true);
+    ws(36, "data"); view.setUint32(40, int16.length * 2, true);
+    new Uint8Array(wav, 44).set(new Uint8Array(int16.buffer));
+    console.log("[MeanVC] User WAV:", total, "samples,", wav.byteLength, "bytes");
+    userPcmRef.current = [];
+    return new Blob([wav], { type: "audio/wav" });
   }, []);
 
   const setEnabled = useCallback((enabled: boolean) => {
