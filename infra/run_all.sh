@@ -70,8 +70,24 @@ else
 fi
 cd "$HEARMEOUT_DIR"
 
-export VC_CHECKPOINT_PATH=/workspace/models/seed-vc/DiT_uvit_tat_xlsr_ema.pth
-export VC_MODEL_CONFIG=configs/presets/config_dit_mel_seed_uvit_xlsr_tiny.yml
+# Prompt for frontend selection
+if [ -z "$FRONTEND_CHOICE" ]; then
+  echo ""
+  echo "  Which frontend UI to run?"
+  echo "    1) New (Vite frontend) [default]"
+  echo "    2) Old (original frontend)"
+  read -p "  Choice [1/2]: " choice
+  case "$choice" in
+    2) export FRONTEND_PATH="$HEARMEOUT_DIR/src/frontend" ;;
+    *) export FRONTEND_PATH="$HEARMEOUT_DIR/frontend/dist" ;;
+  esac
+else
+  case "$FRONTEND_CHOICE" in
+    old) export FRONTEND_PATH="$HEARMEOUT_DIR/src/frontend" ;;
+    *)   export FRONTEND_PATH="$HEARMEOUT_DIR/frontend/dist" ;;
+  esac
+fi
+echo "  Frontend: $FRONTEND_PATH"
 
 echo "=== Starting vc-api (seed-vc, GPU) on port 5001 (SSL) ==="
 python3 -m uvicorn src.app:create_app --factory --host 0.0.0.0 --port 5001 \

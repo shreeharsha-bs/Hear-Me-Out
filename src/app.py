@@ -23,7 +23,8 @@ import torch
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-STATIC_PATH = Path(__file__).parent.parent / "frontend" / "dist"
+_default_static = Path(__file__).parent.parent / "frontend" / "dist"
+STATIC_PATH = Path(os.environ.get("FRONTEND_PATH", _default_static))
 SEED_VC_DIR = Path(__file__).parent.parent / "seed-vc"
 INFERENCE_SCRIPT = SEED_VC_DIR / "inference.py"
 RECORDINGS_DIR = Path(__file__).parent.parent / "recordings"
