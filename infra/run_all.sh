@@ -47,19 +47,6 @@ pkill -f "src.app:create_app" 2>/dev/null || true
 pkill -f "meanvc_server" 2>/dev/null || true
 sleep 2
 
-echo "=== Starting PersonaPlex (GPU) on port 8000 (SSL) ==="
-# Find personaPlex entrypoint (may be at /workspace/ or in Home)
-PERSONAPLEX_ENTRY=""
-for p in /workspace/personaplex_entry.py "$HOME/personaplex_entry.py" \
-         "$SCRIPT_DIR/personaplex_entrypoint.py" "$SCRIPT_DIR/personaplex_entry.py"; do
-    if [ -f "$p" ]; then PERSONAPLEX_ENTRY="$p"; break; fi
-done
-if [ -z "$PERSONAPLEX_ENTRY" ]; then
-    echo "ERROR: personaplex_entry.py not found"; exit 1
-fi
-python3 "$PERSONAPLEX_ENTRY" --host 0.0.0.0 --port 8000 --device cuda --ssl "$SSL_DIR" &
-PID1=$!
-
 # Find Hear-Me-Out directory
 if [ -d /workspace/Hear-Me-Out ]; then
     HEARMEOUT_DIR=/workspace/Hear-Me-Out
@@ -68,14 +55,13 @@ elif [ -d "$HOME/Hear-Me-Out" ]; then
 else
     HEARMEOUT_DIR="$SCRIPT_DIR"
 fi
-cd "$HEARMEOUT_DIR"
 
 # Prompt for frontend selection
 if [ -z "$FRONTEND_CHOICE" ]; then
   echo ""
-  echo "  Which frontend UI to run?"
-  echo "    1) New (Vite frontend) [default]"
-  echo "    2) Old (original frontend)"
+  echo "  Which frontend UI to serve?"
+  echo "    1) New (Vite) [default]"
+  echo "    2) Old (original)"
   read -p "  Choice [1/2]: " choice
   case "$choice" in
     2) FRONTEND_PATH="$HEARMEOUT_DIR/src/frontend" ;;
@@ -100,6 +86,21 @@ fi
 
 echo "  Frontend: $FRONTEND_PATH"
 export FRONTEND_PATH
+
+echo "=== Starting PersonaPlex (GPU) on port 8000 (SSL) ==="
+# Find personaPlex entrypoint (may be at /workspace/ or in Home)
+PERSONAPLEX_ENTRY=""
+for p in /workspace/personaplex_entry.py "$HOME/personaplex_entry.py" \
+         "$SCRIPT_DIR/personaplex_entrypoint.py" "$SCRIPT_DIR/personaplex_entry.py"; do
+    if [ -f "$p" ]; then PERSONAPLEX_ENTRY="$p"; break; fi
+done
+if [ -z "$PERSONAPLEX_ENTRY" ]; then
+    echo "ERROR: personaplex_entry.py not found"; exit 1
+fi
+python3 "$PERSONAPLEX_ENTRY" --host 0.0.0.0 --port 8000 --device cuda --ssl "$SSL_DIR" &
+PID1=$!
+
+cd "$HEARMEOUT_DIR"
 
 echo "=== Starting vc-api (seed-vc, GPU) on port 5001 (SSL) ==="
 python3 -m uvicorn src.app:create_app --factory --host 0.0.0.0 --port 5001 \
