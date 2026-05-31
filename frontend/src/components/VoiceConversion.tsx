@@ -49,7 +49,7 @@ function UploadZone({ file, setFile }: { file: File | null; setFile: (f: File | 
   )
 }
 
-export function VoiceConversion({ sourceChunks }: Props) {
+export function VoiceConversion({ sourceChunks: _sourceChunks }: Props) {
   const [sourceFile, setSourceFile] = useState<File | null>(null)
   const [targetFile, setTargetFile] = useState<File | null>(null)
   const [converting, setConverting] = useState(false)

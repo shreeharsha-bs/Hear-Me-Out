@@ -25,7 +25,7 @@ export function useMeanVCPipeline(
   const meanvcWsRef = useRef<WebSocket | null>(null);
   const pcmStreamRef = useRef<MediaStream | null>(null);
   const pcmContextRef = useRef<AudioContext | null>(null);
-  const vcRecorderRef = useRef<Recorder | null>(null);
+  const vcRecorderRef = useRef<typeof Recorder | null>(null);
   const onAudioRef = useRef(onPersonaplexAudio);
   const userPcmRef = useRef<Float32Array[]>([]);
   onAudioRef.current = onPersonaplexAudio;

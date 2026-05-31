@@ -8,12 +8,11 @@ import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Mic, MicOff, ChevronRight, MessageSquareText, AlertCircle, Download, Play, Pause, Wand2 } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { webmToWavBlob, wavBlobToPcm, mergeFloat32s, createWavFile } from "@/lib/audio"
+import { webmToWavBlob } from "@/lib/audio"
 import type { useRecorder } from "@/hooks/useRecorder"
 import type { useWebSocket } from "@/hooks/useWebSocket"
 import { useMeanVCPipeline } from "@/hooks/useMeanVCPipeline"
 import { transcribeRecording } from "@/hooks/useWebSocket"
-import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 
 type WsState = ReturnType<typeof useWebSocket>
