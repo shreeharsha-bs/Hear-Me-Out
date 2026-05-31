@@ -78,16 +78,28 @@ if [ -z "$FRONTEND_CHOICE" ]; then
   echo "    2) Old (original frontend)"
   read -p "  Choice [1/2]: " choice
   case "$choice" in
-    2) export FRONTEND_PATH="$HEARMEOUT_DIR/src/frontend" ;;
-    *) export FRONTEND_PATH="$HEARMEOUT_DIR/frontend/dist" ;;
+    2) FRONTEND_PATH="$HEARMEOUT_DIR/src/frontend" ;;
+    *) FRONTEND_PATH="$HEARMEOUT_DIR/frontend/dist" ;;
   esac
 else
   case "$FRONTEND_CHOICE" in
-    old) export FRONTEND_PATH="$HEARMEOUT_DIR/src/frontend" ;;
-    *)   export FRONTEND_PATH="$HEARMEOUT_DIR/frontend/dist" ;;
+    old) FRONTEND_PATH="$HEARMEOUT_DIR/src/frontend" ;;
+    *)   FRONTEND_PATH="$HEARMEOUT_DIR/frontend/dist" ;;
   esac
 fi
+
+# Auto-build Vite if dist missing
+if [ ! -d "$FRONTEND_PATH" ] && [[ "$FRONTEND_PATH" == */frontend/dist ]]; then
+  echo "  Vite dist not found, building..."
+  cd "$HEARMEOUT_DIR/frontend" && npm run build 2>/dev/null || {
+    echo "  Build failed, falling back to old frontend"
+    FRONTEND_PATH="$HEARMEOUT_DIR/src/frontend"
+  }
+  cd "$HEARMEOUT_DIR"
+fi
+
 echo "  Frontend: $FRONTEND_PATH"
+export FRONTEND_PATH
 
 echo "=== Starting vc-api (seed-vc, GPU) on port 5001 (SSL) ==="
 python3 -m uvicorn src.app:create_app --factory --host 0.0.0.0 --port 5001 \
