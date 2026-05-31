@@ -77,7 +77,9 @@ fi
 # Auto-build Vite if dist missing
 if [ ! -d "$FRONTEND_PATH" ] && [[ "$FRONTEND_PATH" == */frontend/dist ]]; then
   echo "  Vite dist not found, building..."
-  cd "$HEARMEOUT_DIR/frontend" && npm run build 2>/dev/null || {
+  cd "$HEARMEOUT_DIR/frontend"
+  [ ! -d node_modules ] && echo "  Installing frontend dependencies..." && npm install
+  npm run build 2>/dev/null || {
     echo "  Build failed, falling back to old frontend"
     FRONTEND_PATH="$HEARMEOUT_DIR/src/frontend"
   }
