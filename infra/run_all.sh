@@ -62,7 +62,7 @@ if [ -z "$FRONTEND_CHOICE" ]; then
   echo "  Which frontend UI to serve?"
   echo "    1) New (Vite) [default]"
   echo "    2) Old (original)"
-  read -t 60 -p "  Choice [1/2]: " choice 2>/dev/tty || choice="1"
+  read -t 60 -p "  Choice [1/2]: " choice < /dev/tty 2>/dev/tty || choice="1"
   case "$choice" in
     2) FRONTEND_PATH="$HEARMEOUT_DIR/src/frontend" ;;
     *) FRONTEND_PATH="$HEARMEOUT_DIR/frontend/dist" ;;
