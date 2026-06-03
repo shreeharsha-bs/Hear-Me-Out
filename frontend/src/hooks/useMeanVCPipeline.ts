@@ -160,7 +160,7 @@ const source = audioCtx.createMediaStreamSource(stream);
     vcRecorderRef.current = encoder as any;
 
     let pcmBuf = new Float32Array(0);
-    const FRAME = 640; // 40ms at 16000Hz
+    const FRAME = 320; // 20ms at 16000Hz (matches Opus internal frame size)
 
     meanvcWs.addEventListener("message", (event: MessageEvent) => {
       if (typeof event.data === "string") return;
