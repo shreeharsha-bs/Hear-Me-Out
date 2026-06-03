@@ -71,6 +71,14 @@ def allowed_file(filename):
 def create_app():
     app = FastAPI()
 
+    @app.on_event("startup")
+    async def preload_models():
+        logger.info("Pre-loading Whisper model...")
+        _init_whisper()
+        logger.info("Pre-loading VAD model...")
+        _init_vad()
+        logger.info("Pre-loading complete")
+
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
