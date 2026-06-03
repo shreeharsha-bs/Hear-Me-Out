@@ -49,7 +49,7 @@ export function ConversationView({ ws, recorder }: Props) {
   const transcribed = useRef(false)
 
   const [textPrompt, setTextPrompt] = useState("You enjoy having a good conversation.")
-  const [meanvcSteps, setMeanvcSteps] = useState(8)
+  const [meanvcSteps, setMeanvcSteps] = useState(8)  // 1-30 real-time safe, higher = quality but slower
 
   const vcPipeline = useMeanVCPipeline(
     (data) => ws.sendAudio(data),
@@ -528,7 +528,7 @@ export function ConversationView({ ws, recorder }: Props) {
                     <input
                       type="range"
                       min="1"
-                      max="100"
+                      max="30"
                       value={meanvcSteps}
                       onChange={(e) => setMeanvcSteps(Number(e.target.value))}
                       disabled={vcPipeline.vcStreaming}

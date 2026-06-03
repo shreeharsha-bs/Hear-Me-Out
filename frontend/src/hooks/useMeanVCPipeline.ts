@@ -112,29 +112,10 @@ const source = audioCtx.createMediaStreamSource(stream);
     meanvcWs.addEventListener("error", () => {
       console.error("[MeanVC] WebSocket ERROR");
       setState(s => ({ ...s, vcStatus: "MeanVC WebSocket error" }));
-    });
+});
 
-    // 5a. Set message handler IMMEDIATELY before any await
-    let vcOutputTime = audioCtx.currentTime + 0.5;
-    let msgRecd = 0;
-    meanvcWs.addEventListener("message", (event: MessageEvent) => {
-      msgRecd++;
-      if (msgRecd <= 3) console.log("[MeanVC] Rcvd msg", msgRecd, typeof event.data, (event.data as ArrayBuffer)?.byteLength);
-      if (typeof event.data === "string") return;
-      const float32 = new Float32Array(event.data);
-      if (float32.length === 0) return;
-      userPcmRef.current.push(new Float32Array(float32));
-      const buf = audioCtx.createBuffer(1, float32.length, 16000);
-      buf.getChannelData(0).set(float32);
-      const bufSource = audioCtx.createBufferSource();
-      bufSource.buffer = buf;
-      bufSource.connect(vcDest);
-      bufSource.start(vcOutputTime);
-      vcOutputTime = Math.max(vcOutputTime + buf.duration, audioCtx.currentTime + 0.01);
-    });
-
-    // 5b. Create Recorder to encode MeanVC output → Ogg Opus → PersonaPlex
-    console.log("[MeanVC] Creating Recorder for Ogg Opus encoding...");
+    // 5b. Create Recorder ONLY for its Ogg Opus encoder Worker (not for capture)
+    console.log("[MeanVC] Creating Recorder for Ogg Opus encoder...");
     const vcRecorder = new Recorder({
       encoderPath: "https://cdn.jsdelivr.net/npm/opus-recorder@latest/dist/encoderWorker.min.js",
       streamPages: true,
@@ -147,25 +128,59 @@ const source = audioCtx.createMediaStreamSource(stream);
     });
     vcRecorderRef.current = vcRecorder;
 
-vcRecorder.ondataavailable = (arrayBuffer: ArrayBuffer) => {
-      onAudioRef.current(arrayBuffer);
-    };
+    // Override encoder Worker onmessage to route Ogg Opus → PersonaPlex
+    if (vcRecorder.encoder) {
+      vcRecorder.encoder.onmessage = (e: MessageEvent) => {
+        if (e.data?.command === "page" && e.data.page) {
+          onAudioRef.current(e.data.page);
+        }
+      };
+    }
 
-    // Keep AudioContext alive during streaming
+    // Accumulate MeanVC output PCM → encode via Worker
+    let vcOutputTime = audioCtx.currentTime + 0.5;
+    let pcmEncodeBuf = new Float32Array(0);
+    const ENC_FRAME = 640; // 40ms at 16000Hz
+
+    meanvcWs.addEventListener("message", (event: MessageEvent) => {
+      if (typeof event.data === "string") return;
+      const float32 = new Float32Array(event.data);
+      if (float32.length === 0) return;
+      // Save for user WAV
+      userPcmRef.current.push(new Float32Array(float32));
+      // Route to vcDest for monitoring (original flow kept)
+      const buf = audioCtx.createBuffer(1, float32.length, 16000);
+      buf.getChannelData(0).set(float32);
+      const bufSource = audioCtx.createBufferSource();
+      bufSource.buffer = buf;
+      bufSource.connect(vcDest);
+      bufSource.start(vcOutputTime);
+      vcOutputTime = Math.max(vcOutputTime + buf.duration, audioCtx.currentTime + 0.01);
+      // Encode to Opus → PersonaPlex
+      if (vcRecorder.encoder) {
+        const merged = new Float32Array(pcmEncodeBuf.length + float32.length);
+        merged.set(pcmEncodeBuf, 0);
+        merged.set(float32, pcmEncodeBuf.length);
+        let off = 0;
+        while (off + ENC_FRAME <= merged.length) {
+          vcRecorder.encoder.postMessage({
+            command: "encode",
+            buffers: [merged.slice(off, off + ENC_FRAME)],
+          });
+          off += ENC_FRAME;
+        }
+        pcmEncodeBuf = merged.slice(off);
+      }
+    });
+
+// Keep AudioContext alive during streaming
     resumeRef.current = setInterval(() => {
       if (pcmContextRef.current?.state === "suspended") {
         pcmContextRef.current.resume();
       }
     }, 1000);
-    try {
-      await vcRecorder.start(vcDest.stream);
-      console.log("[MeanVC] Recorder started on VC stream");
-    } catch (e: any) {
-      console.warn("[MeanVC] Recorder.start(stream) failed:", e.message, "- trying without stream");
-      await vcRecorder.start();
-    }
 
-}, [state.vcTargetId]);
+  }, [state.vcTargetId]);
 
   const stopVCStream = useCallback(() => {
     clearInterval(resumeRef.current);
