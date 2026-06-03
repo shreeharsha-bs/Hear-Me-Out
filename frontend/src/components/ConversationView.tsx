@@ -454,7 +454,7 @@ export function ConversationView({ ws, recorder }: Props) {
             </div>
             <div className="relative">
               {isConnected && (
-                <div className="animate-pulse absolute inset-0 -m-1.5 rounded-full pointer-events-none shadow-[0_0_0_6px_rgba(239,68,68,0.15)]" />
+                <div className="animate-pulse absolute inset-0 -m-1.5 rounded-full pointer-events-none shadow-[0_0_0_6px_rgba(239,68,68,0.35)]" />
               )}
               {hasError && !isConnected && (
                 <div className="animate-pulse absolute inset-0 -m-1.5 rounded-full pointer-events-none shadow-[0_0_0_6px_rgba(239,68,68,0.12)]" />
@@ -463,7 +463,7 @@ export function ConversationView({ ws, recorder }: Props) {
                 variant={isConnected ? "destructive" : hasError ? "destructive" : "default"}
                 onClick={isConnected ? stopConversation : startConversation}
                 disabled={isWarming}
-                className={cn("size-12 rounded-full", isConnected && "bg-red-500 hover:bg-red-600 text-white border-0", !isConnected && !hasError && !isWarming && "shadow-md shadow-primary/20")}
+                className={cn("size-12 rounded-full", isConnected && "bg-red-500 hover:bg-red-600 text-white border-0 ring-4 ring-red-500/30", !isConnected && !hasError && !isWarming && "shadow-md shadow-primary/20")}
                 aria-label={isConnected ? "Stop recording" : "Start recording"}
               >
                 {isWarming ? <Spinner className="text-primary-foreground" /> : isConnected ? <MicOff /> : <Mic />}
