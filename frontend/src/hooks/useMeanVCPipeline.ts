@@ -155,7 +155,7 @@ const source = audioCtx.createMediaStreamSource(stream);
       bufSource.buffer = buf;
       bufSource.connect(vcDest);
       bufSource.start(vcOutputTime);
-      vcOutputTime += buf.duration;
+      vcOutputTime = Math.max(vcOutputTime + buf.duration, audioCtx.currentTime + 0.01);
     });
 
 // Keep AudioContext alive during streaming
