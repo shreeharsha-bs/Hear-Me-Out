@@ -17,11 +17,11 @@ function App() {
       <header className="mb-4 flex items-center gap-4 sm:mb-5">
         <img src="/KTH_Logo.jpg" alt="KTH Logo" className="h-16 sm:h-20 flex-shrink-0" />
         <div className="flex flex-col gap-0.5 min-w-0">
-          <h1 className="text-xl sm:text-2xl font-bold tracking-tight">Hear Me Out</h1>
-          <p className="text-xs sm:text-sm text-muted-foreground leading-snug">
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground">Hear Me Out</h1>
+          <p className="text-xs sm:text-sm text-foreground/80 leading-snug">
             Interactive evaluation and bias discovery platform for speech-to-speech conversational AI
           </p>
-          <p className="text-[11px] sm:text-xs text-muted-foreground/70">
+          <p className="text-[11px] sm:text-xs text-foreground/60">
             KTH Royal Institute of Technology, Stockholm, Sweden
           </p>
         </div>
