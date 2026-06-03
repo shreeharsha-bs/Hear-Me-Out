@@ -114,29 +114,43 @@ const source = audioCtx.createMediaStreamSource(stream);
       setState(s => ({ ...s, vcStatus: "MeanVC WebSocket error" }));
 });
 
-    // 5b. Use AudioEncoder (WebCodecs) to encode MeanVC PCM → Opus + Ogg wrap
+    // 5b. Use AudioEncoder (WebCodecs) for Opus + Ogg wrapper
     let pageSeq = 0;
     const streamSerial = Math.floor(Math.random() * 0xFFFFFFFF);
 
-    function writeOggPage(opusData: ArrayBuffer): ArrayBuffer {
-      const data = new Uint8Array(opusData);
-      const granule = 0; // simplified: no granule tracking needed for streaming
-      const headerSize = 27 + 1; // 27 byte header + 1 segment
+    function writeOggPage(data: Uint8Array, granule: number = 0, flags: number = 0): ArrayBuffer {
+      const headerSize = 27 + 1;
       const page = new ArrayBuffer(headerSize + data.length);
       const v = new DataView(page);
       const ws = (o: number, s: string) => { for (let i=0;i<s.length;i++) v.setUint8(o+i, s.charCodeAt(i)); };
       ws(0, "OggS");
       v.setUint8(4, 0); // version
-      v.setUint8(5, 0); // header type (0=normal)
+      v.setUint8(5, flags);
       v.setBigInt64(6, BigInt(granule), true);
       v.setUint32(14, streamSerial, true);
       v.setUint32(18, pageSeq++, true);
-      v.setUint32(22, 0, true); // checksum (0 = skip)
+      v.setUint32(22, 0, true); // checksum = 0
       v.setUint8(26, 1); // 1 segment
-      v.setUint8(27, data.length); // segment length
+      v.setUint8(27, data.length);
       new Uint8Array(page, headerSize).set(data);
       return page;
     }
+
+    // Send OpusHead identification header
+    // OpusHead: "OpusHead" + version(1) + channels(1) + pre-skip(2) + sample_rate(4) + gain(2) + family(1)
+    const opusHead = new Uint8Array(19);
+    opusHead.set(new TextEncoder().encode("OpusHead"), 0);
+    opusHead[8] = 1;   // version
+    opusHead[9] = 1;   // channels
+    opusHead[10] = 0; opusHead[11] = 0; // pre-skip = 0
+    opusHead[12] = 0x80; opusHead[13] = 0x3E; opusHead[14] = 0; opusHead[15] = 0; // 16000 Hz LE
+    opusHead[16] = 0; opusHead[17] = 0; // output gain = 0
+    opusHead[18] = 0; // channel mapping family = 0
+    onAudioRef.current(writeOggPage(opusHead, 0, 2)); // 2=BOS (beginning of stream)
+
+    // Send OpusTags
+    const opusTags = new Uint8Array(new TextEncoder().encode("OpusTags"));
+    onAudioRef.current(writeOggPage(opusTags, 0, 0));
 
     let encodeCount = 0;
     const encoder = new AudioEncoder({
@@ -145,7 +159,7 @@ const source = audioCtx.createMediaStreamSource(stream);
         chunk.copyTo(buf);
         encodeCount++;
         if (encodeCount <= 3) console.log("[MeanVC] Opus frame", encodeCount, "bytes:", buf.byteLength);
-        onAudioRef.current(writeOggPage(buf));
+        onAudioRef.current(writeOggPage(new Uint8Array(buf)));
       },
       error: (e) => console.error("[MeanVC] Encoder error:", e),
     });
