@@ -472,7 +472,7 @@ export function ConversationView({ ws, recorder }: Props) {
 
             {isConnected && !isWarming && (
               <div className="flex flex-col items-center gap-0.5 text-center">
-                <p className="text-xs font-medium text-destructive">Recording…</p>
+                <p className="text-xs font-medium text-red-400">Recording…</p>
                 <p className="text-[11px] text-muted-foreground">Tap to stop</p>
               </div>
             )}
