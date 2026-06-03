@@ -134,7 +134,7 @@ const source = audioCtx.createMediaStreamSource(stream);
     const head = new Uint8Array(19);
     head.set(new TextEncoder().encode("OpusHead"), 0);
     head[8] = 1; head[9] = 1; // version=1, channels=1
-    head[10] = 0xF0; head[11] = 0x17; // pre-skip = 6120 (~384ms at 16k, standard)
+    head[10] = 0x38; head[11] = 0x01; // pre-skip = 312 (standard, at input rate)
     new DataView(head.buffer).setUint32(12, 16000, true); // sample rate LE
     head[16] = 0; head[17] = 0; // output gain = 0
     head[18] = 0; // mapping family = 0
