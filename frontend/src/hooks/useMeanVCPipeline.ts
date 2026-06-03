@@ -13,6 +13,7 @@ export interface MeanVCPipelineState {
 
 export function useMeanVCPipeline(
   onPersonaplexAudio: (data: ArrayBuffer) => void,
+  initialSteps: number = 8,
 ) {
   const [state, setState] = useState<MeanVCPipelineState>({
     vcEnabled: false,
@@ -78,7 +79,7 @@ const source = audioCtx.createMediaStreamSource(stream);
     const vcDest = audioCtx.createMediaStreamDestination();
 
     // 4. Connect to MeanVC WS
-    const meanvcUrl = getMeanvcWsUrl(state.vcTargetId!, audioCtx.sampleRate);
+    const meanvcUrl = getMeanvcWsUrl(state.vcTargetId!, audioCtx.sampleRate, initialSteps);
     console.log("[MeanVC] Connecting to:", meanvcUrl);
     const meanvcWs = new WebSocket(meanvcUrl);
     meanvcWsRef.current = meanvcWs;

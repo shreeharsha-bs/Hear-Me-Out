@@ -50,6 +50,7 @@ export function ConversationView({ ws, recorder }: Props) {
 
   const vcPipeline = useMeanVCPipeline(
     (data) => ws.sendAudio(data),
+    meanvcSteps,
   )
   const { vcEnabled, vcTargetId, vcStreaming, startVCStream, stopVCStream: vcStop, getUserAudioWav } = vcPipeline
   const { isRecording, start: startRecorder } = recorder
@@ -63,6 +64,7 @@ export function ConversationView({ ws, recorder }: Props) {
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const [textPrompt, setTextPrompt] = useState("You enjoy having a good conversation.")
+  const [meanvcSteps, setMeanvcSteps] = useState(8)
 
   // Auto-scroll to active turn during playback
   useEffect(() => {
@@ -520,6 +522,18 @@ export function ConversationView({ ws, recorder }: Props) {
                     onChange={(e) => { const f = e.target.files?.[0]; if (f) vcPipeline.uploadTarget(f); }}
                     className="w-full text-[10px] text-muted-foreground file:mr-2 file:py-0.5 file:px-2 file:rounded file:bg-purple-600 file:text-white file:border-0 hover:file:bg-purple-500"
                   />
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] text-muted-foreground whitespace-nowrap">Steps: {meanvcSteps}</span>
+                    <input
+                      type="range"
+                      min="1"
+                      max="100"
+                      value={meanvcSteps}
+                      onChange={(e) => setMeanvcSteps(Number(e.target.value))}
+                      disabled={vcPipeline.vcStreaming}
+                      className="w-full h-1 accent-purple-500"
+                    />
+                  </div>
                   {vcPipeline.vcStatus && (
                     <p className={`text-[10px] ${vcPipeline.vcStatus.includes('Error') ? 'text-red-400' : 'text-green-400'}`}>
                       {vcPipeline.vcStatus}

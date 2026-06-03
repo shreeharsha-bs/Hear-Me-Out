@@ -1,8 +1,8 @@
 export const API_BASE = "";
 
-export function getMeanvcWsUrl(targetId: string, sourceSr: number): string {
+export function getMeanvcWsUrl(targetId: string, sourceSr: number, steps: number = 8): string {
   const host = (import.meta as any).env?.VITE_MEANVC_HOST || "130.237.3.103";
-  return `wss://${host}:5002/api/meanvc/stream?target_id=${targetId}&steps=8&source_sr=${sourceSr}`;
+  return `wss://${host}:5002/api/meanvc/stream?target_id=${targetId}&steps=${steps}&source_sr=${sourceSr}`;
 }
 
 export function getMeanvcLoadTargetUrl(): string {
