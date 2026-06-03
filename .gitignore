@@ -7,4 +7,4 @@ tools/__pycache__/
 models/
 .opencode/
 .agents/
-skills-lock.json
+skills-lock.jsontools/test-recordings/
