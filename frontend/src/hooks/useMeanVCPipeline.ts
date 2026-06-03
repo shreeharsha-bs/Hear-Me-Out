@@ -114,97 +114,63 @@ const source = audioCtx.createMediaStreamSource(stream);
       setState(s => ({ ...s, vcStatus: "MeanVC WebSocket error" }));
 });
 
-    // 5b. Use AudioEncoder (WebCodecs) for Opus + Ogg wrapper
-    let pageSeq = 0;
-    const streamSerial = Math.floor(Math.random() * 0xFFFFFFFF);
+    // 5b. Use Recorder to init Ogg Opus encoder, then feed MeanVC PCM
+    const vcRecorder = new Recorder({
+      encoderPath: "https://cdn.jsdelivr.net/npm/opus-recorder@latest/dist/encoderWorker.min.js",
+      streamPages: true,
+      encoderApplication: 2049,
+      encoderFrameSize: 40,
+      encoderSampleRate: 16000,
+      maxFramesPerPage: 1,
+      numberOfChannels: 1,
+      monitorGain: 0,
+    });
+    vcRecorderRef.current = vcRecorder;
 
-    function writeOggPage(data: Uint8Array, granule: number = 0, flags: number = 0): ArrayBuffer {
-      const headerSize = 27 + 1;
-      const page = new ArrayBuffer(headerSize + data.length);
-      const v = new DataView(page);
-      const ws = (o: number, s: string) => { for (let i=0;i<s.length;i++) v.setUint8(o+i, s.charCodeAt(i)); };
-      ws(0, "OggS");
-      v.setUint8(4, 0); // version
-      v.setUint8(5, flags);
-      v.setBigInt64(6, BigInt(granule), true);
-      v.setUint32(14, streamSerial, true);
-      v.setUint32(18, pageSeq++, true);
-      v.setUint32(22, 0, true); // checksum = 0
-      v.setUint8(26, 1); // 1 segment
-      v.setUint8(27, data.length);
-      new Uint8Array(page, headerSize).set(data);
-      return page;
+    // Start recorder to initialize the encoder Worker
+    try { await vcRecorder.start(); console.log("[MeanVC] Recorder started, encoder:", !!vcRecorder.encoder); }
+    catch (e: any) { console.warn("[MeanVC] Recorder.start failed:", e.message); }
+
+    // Access encoder Worker (may be vcRecorder.encoder after start)
+    const encoderW = vcRecorder.encoder || (vcRecorder as any)._encoder || (vcRecorder as any).worker;
+    console.log("[MeanVC] Encoder Worker:", !!encoderW, Object.keys(vcRecorder).slice(0, 15));
+
+    if (encoderW) {
+      encoderW.onmessage = (e: MessageEvent) => {
+        if (e.data?.command === "page" && e.data.page) onAudioRef.current(e.data.page);
+      };
+    } else {
+      // Fallback: use vcRecorder.ondataavailable from mic capture
+      vcRecorder.ondataavailable = (buf: ArrayBuffer) => onAudioRef.current(buf);
     }
 
-    // Send OpusHead identification header
-    // OpusHead: "OpusHead" + version(1) + channels(1) + pre-skip(2) + sample_rate(4) + gain(2) + family(1)
-    const opusHead = new Uint8Array(19);
-    opusHead.set(new TextEncoder().encode("OpusHead"), 0);
-    opusHead[8] = 1;   // version
-    opusHead[9] = 1;   // channels
-    opusHead[10] = 0; opusHead[11] = 0; // pre-skip = 0
-    opusHead[12] = 0x80; opusHead[13] = 0x3E; opusHead[14] = 0; opusHead[15] = 0; // 16000 Hz LE
-    opusHead[16] = 0; opusHead[17] = 0; // output gain = 0
-    opusHead[18] = 0; // channel mapping family = 0
-    onAudioRef.current(writeOggPage(opusHead, 0, 2)); // 2=BOS (beginning of stream)
-
-    // Send OpusTags
-    const opusTags = new Uint8Array(new TextEncoder().encode("OpusTags"));
-    onAudioRef.current(writeOggPage(opusTags, 0, 0));
-
-    let encodeCount = 0;
-    const encoder = new AudioEncoder({
-      output: (chunk) => {
-        const buf = new ArrayBuffer(chunk.byteLength);
-        chunk.copyTo(buf);
-        encodeCount++;
-        if (encodeCount <= 3) console.log("[MeanVC] Opus frame", encodeCount, "bytes:", buf.byteLength);
-        onAudioRef.current(writeOggPage(new Uint8Array(buf)));
-      },
-      error: (e) => console.error("[MeanVC] Encoder error:", e),
-    });
-    encoder.configure({ codec: "opus", sampleRate: 16000, numberOfChannels: 1, bitrate: 64000 });
-    console.log("[MeanVC] AudioEncoder configured");
-    vcRecorderRef.current = encoder as any;
-
-    // Route MeanVC output → encode via AudioEncoder
-    let pcmEncodeBuf = new Float32Array(0);
-    const ENC_FRAME = 640; // 40ms at 16000Hz
+    // Feed MeanVC PCM to encoder
+    let pcmBuf = new Float32Array(0);
+    const FRAME = 640;
 
     meanvcWs.addEventListener("message", (event: MessageEvent) => {
       if (typeof event.data === "string") return;
-      const float32 = new Float32Array(event.data);
-      if (float32.length === 0) return;
-      // Save for user WAV
-      userPcmRef.current.push(new Float32Array(float32));
-      // Route to vcDest for monitoring
-      const buf = audioCtx.createBuffer(1, float32.length, 16000);
-      buf.getChannelData(0).set(float32);
-      const bufSource = audioCtx.createBufferSource();
-      bufSource.buffer = buf;
-      bufSource.connect(vcDest);
-      bufSource.start(audioCtx.currentTime + 0.01);
-      // Encode to Opus via AudioEncoder + Ogg wrap → PersonaPlex
-      if (encoder.state === "configured") {
-        const merged = new Float32Array(pcmEncodeBuf.length + float32.length);
-        merged.set(pcmEncodeBuf, 0);
-        merged.set(float32, pcmEncodeBuf.length);
+      const d = new Float32Array(event.data);
+      if (d.length === 0) return;
+      userPcmRef.current.push(new Float32Array(d));
+      const b = audioCtx.createBuffer(1, d.length, 16000);
+      b.getChannelData(0).set(d);
+      const bs = audioCtx.createBufferSource();
+      bs.buffer = b; bs.connect(vcDest); bs.start(audioCtx.currentTime + 0.01);
+      if (encoderW) {
+        const m = new Float32Array(pcmBuf.length + d.length);
+        m.set(pcmBuf, 0); m.set(d, pcmBuf.length);
         let off = 0;
-        while (off + ENC_FRAME <= merged.length) {
-          try {
-            const frame = new AudioData({
-              format: "f32-planar", sampleRate: 16000,
-              numberOfFrames: ENC_FRAME, numberOfChannels: 1,
-              timestamp: 0, data: merged.slice(off, off + ENC_FRAME),
-            });
-            encoder.encode(frame);
-            frame.close();
-          } catch {}
-          off += ENC_FRAME;
+        while (off + FRAME <= m.length) {
+          encoderW.postMessage({ command: "encode", buffers: [m.slice(off, off + FRAME)] });
+          off += FRAME;
         }
-        pcmEncodeBuf = merged.slice(off);
+        pcmBuf = m.slice(off);
       }
     });
+
+    // Stop mic capture if we have the encoder
+    if (encoderW) { try { vcRecorder.stop?.(); } catch {} }
 
 // Keep AudioContext alive during streaming
     resumeRef.current = setInterval(() => {
