@@ -129,8 +129,8 @@ export function useWebSocket() {
     }).catch(() => {});
   }, []);
 
-  const connect = useCallback(() => {
-    const url = getPersonaplexWsURL();
+  const connect = useCallback((textPrompt?: string) => {
+    const url = getPersonaplexWsURL(textPrompt);
     console.log("Connecting to:", url);
     setError(null);
     personaplexOpus.current = [];

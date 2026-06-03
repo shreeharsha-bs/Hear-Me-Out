@@ -62,6 +62,7 @@ export function ConversationView({ ws, recorder }: Props) {
   const [duration, setDuration] = useState(0)
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const scrollRef = useRef<HTMLDivElement | null>(null)
+  const [textPrompt, setTextPrompt] = useState("You enjoy having a good conversation.")
 
   // Auto-scroll to active turn during playback
   useEffect(() => {
@@ -80,8 +81,8 @@ export function ConversationView({ ws, recorder }: Props) {
     setUserWavUrl(null)
     setPersonaplexWavUrl(null)
     setMergedWavUrl(null)
-    ws.connect()
-  }, [ws])
+    ws.connect(textPrompt)
+  }, [ws, textPrompt])
 
   const stopConversation = useCallback(() => {
     const wasVC = vcStreaming
@@ -441,6 +442,16 @@ export function ConversationView({ ws, recorder }: Props) {
       <div className="flex flex-col gap-4 order-first md:order-none">
         <Card className="py-0 overflow-visible">
           <CardContent className="flex flex-col items-center gap-3 px-4 py-4">
+            <div className="w-full">
+              <textarea
+                className="w-full rounded-md border bg-background px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground resize-none"
+                rows={2}
+                value={textPrompt}
+                onChange={(e) => setTextPrompt(e.target.value)}
+                disabled={isConnected}
+                placeholder="Persona prompt..."
+              />
+            </div>
             <div className="relative">
               {isConnected && (
                 <div className="animate-pulse absolute inset-0 -m-1.5 rounded-full pointer-events-none shadow-[0_0_0_6px_rgba(239,68,68,0.15)]" />

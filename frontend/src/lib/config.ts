@@ -10,9 +10,11 @@ export function getMeanvcLoadTargetUrl(): string {
   return `https://${host}:5002/api/meanvc/load-target`;
 }
 
-export function getPersonaplexWsURL(): string {
+const DEFAULT_PROMPT = "You enjoy having a good conversation.";
+
+export function getPersonaplexWsURL(textPrompt?: string): string {
   const wsHost = (import.meta as any).env?.VITE_PERSONAPLEX_HOST || window.location.hostname;
   const voicePrompt = "NATF2.pt";
-  const textPrompt = "You enjoy having a good conversation.";
-  return `wss://${wsHost}:8000/api/chat?voice_prompt=${encodeURIComponent(voicePrompt)}&text_prompt=${encodeURIComponent(textPrompt)}`;
+  const tp = textPrompt || DEFAULT_PROMPT;
+  return `wss://${wsHost}:8000/api/chat?voice_prompt=${encodeURIComponent(voicePrompt)}&text_prompt=${encodeURIComponent(tp)}`;
 }
