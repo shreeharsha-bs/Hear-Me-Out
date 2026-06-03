@@ -104,7 +104,9 @@ def create_app():
             temp_path = f.name
 
         try:
-            segments_result, _ = whisper_model.transcribe(temp_path, beam_size=1)
+            segments_result, _ = whisper_model.transcribe(
+                temp_path, beam_size=1, language="en"
+            )
             segments = []
             for s in segments_result:
                 if s.text.strip():
