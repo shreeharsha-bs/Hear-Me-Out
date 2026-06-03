@@ -48,6 +48,9 @@ export function ConversationView({ ws, recorder }: Props) {
   const micClicked = useRef(false)
   const transcribed = useRef(false)
 
+  const [textPrompt, setTextPrompt] = useState("You enjoy having a good conversation.")
+  const [meanvcSteps, setMeanvcSteps] = useState(8)
+
   const vcPipeline = useMeanVCPipeline(
     (data) => ws.sendAudio(data),
     meanvcSteps,
@@ -64,7 +67,6 @@ export function ConversationView({ ws, recorder }: Props) {
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const [textPrompt, setTextPrompt] = useState("You enjoy having a good conversation.")
-  const [meanvcSteps, setMeanvcSteps] = useState(8)
 
   // Auto-scroll to active turn during playback
   useEffect(() => {
