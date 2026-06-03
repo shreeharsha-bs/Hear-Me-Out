@@ -1,0 +1,22 @@
+#!/bin/bash
+# Build the Vite frontend
+# Usage: bash infra/build-frontend.sh
+
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+FRONTEND_DIR="$PROJECT_DIR/frontend"
+
+cd "$FRONTEND_DIR"
+
+echo "=== Building Vite frontend ==="
+
+if [ ! -d node_modules ]; then
+  echo "Installing dependencies..."
+  npm install
+fi
+
+npm run build
+
+echo "=== Build complete → $FRONTEND_DIR/dist ==="
