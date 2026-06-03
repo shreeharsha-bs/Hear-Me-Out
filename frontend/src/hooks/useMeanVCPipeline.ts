@@ -113,25 +113,52 @@ const source = audioCtx.createMediaStreamSource(stream);
       setState(s => ({ ...s, vcStatus: "MeanVC WebSocket error" }));
 });
 
-    // 5b. Use AudioEncoder (WebCodecs) to encode MeanVC PCM → raw Opus → PersonaPlex
-    // No Recorder, no vcDest routing — direct PCM → Opus → PersonaPlex
-    let encodeCount = 0;
+    // 5b. Use AudioEncoder for Opus + Ogg wrapping → PersonaPlex
+    let pageSeq = 0;
+    const streamSerial = Math.floor(Math.random() * 0xFFFFFFFF);
+
+    function oggPage(data: Uint8Array, granule = 0, flags = 0): ArrayBuffer {
+      const hdr = 27 + 1;
+      const page = new ArrayBuffer(hdr + data.length);
+      const v = new DataView(page);
+      const ws = (o: number, s: string) => { for (let i=0;i<s.length;i++) v.setUint8(o+i, s.charCodeAt(i)); };
+      ws(0, "OggS"); v.setUint8(4, 0); v.setUint8(5, flags);
+      v.setBigInt64(6, BigInt(granule), true);
+      v.setUint32(14, streamSerial, true); v.setUint32(18, pageSeq++, true);
+      v.setUint32(22, 0, true); v.setUint8(26, 1); v.setUint8(27, data.length);
+      new Uint8Array(page, hdr).set(data);
+      return page;
+    }
+
+    // OpusHead: "OpusHead" + version(1) + channels(1) + pre_skip(2) + rate(4) + gain(2) + family(1)
+    const head = new Uint8Array(19);
+    head.set(new TextEncoder().encode("OpusHead"), 0);
+    head[8] = 1; head[9] = 1; // version=1, channels=1
+    head[10] = 0xF0; head[11] = 0x17; // pre-skip = 6120 (~384ms at 16k, standard)
+    new DataView(head.buffer).setUint32(12, 16000, true); // sample rate LE
+    head[16] = 0; head[17] = 0; // output gain = 0
+    head[18] = 0; // mapping family = 0
+    onAudioRef.current(oggPage(head, 0, 2)); // BOS
+
+    // OpusTags
+    const tags = new TextEncoder().encode("OpusTags");
+    onAudioRef.current(oggPage(tags, 0, 0));
+
+    let encCount = 0;
     const encoder = new AudioEncoder({
       output: (chunk) => {
-        const buf = new ArrayBuffer(chunk.byteLength);
+        const buf = new Uint8Array(chunk.byteLength);
         chunk.copyTo(buf);
-        encodeCount++;
-        if (encodeCount <= 3) console.log("[MeanVC] Opus frame", encodeCount, "bytes:", buf.byteLength);
-        // Send raw Opus directly — PersonaPlex's ogg-opus-decoder may handle it
-        onAudioRef.current(buf);
+        encCount++;
+        if (encCount <= 3) console.log("[MeanVC] Ogg page", encCount, "bytes:", buf.length);
+        onAudioRef.current(oggPage(buf));
       },
       error: (e) => console.error("[MeanVC] Encoder error:", e),
     });
     encoder.configure({ codec: "opus", sampleRate: 16000, numberOfChannels: 1, bitrate: 64000 });
-    console.log("[MeanVC] AudioEncoder configured");
+    console.log("[MeanVC] AudioEncoder with Ogg wrapper ready");
     vcRecorderRef.current = encoder as any;
 
-    // Buffer MeanVC PCM and encode to Opus frames
     let pcmBuf = new Float32Array(0);
     const FRAME = 640; // 40ms at 16000Hz
 
@@ -143,18 +170,12 @@ const source = audioCtx.createMediaStreamSource(stream);
 
       if (encoder.state === "configured") {
         const merged = new Float32Array(pcmBuf.length + float32.length);
-        merged.set(pcmBuf, 0);
-        merged.set(float32, pcmBuf.length);
+        merged.set(pcmBuf, 0); merged.set(float32, pcmBuf.length);
         let off = 0;
         while (off + FRAME <= merged.length) {
           try {
-            const frame = new AudioData({
-              format: "f32-planar", sampleRate: 16000,
-              numberOfFrames: FRAME, numberOfChannels: 1,
-              timestamp: 0, data: merged.slice(off, off + FRAME),
-            });
-            encoder.encode(frame);
-            frame.close();
+            const f = new AudioData({ format: "f32-planar", sampleRate: 16000, numberOfFrames: FRAME, numberOfChannels: 1, timestamp: 0, data: merged.slice(off, off + FRAME) });
+            encoder.encode(f); f.close();
           } catch {}
           off += FRAME;
         }
