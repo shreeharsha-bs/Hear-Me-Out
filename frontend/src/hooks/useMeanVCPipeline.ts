@@ -143,27 +143,31 @@ const source = audioCtx.createMediaStreamSource(stream);
 
     // Route MeanVC output → ring buffer → steady ScriptProcessor → vcDest → Recorder
     const ringBuffer: Float32Array[] = [];
-    const writeProcessor = audioCtx.createScriptProcessor(2048, 0, 1);
-    writeProcessor.connect(vcDest);
-    writeProcessor.onaudioprocess = (e) => {
-      const out = e.outputBuffer.getChannelData(0);
-      let written = 0;
-      while (written < out.length && ringBuffer.length > 0) {
-        const chunk = ringBuffer[0];
-        const toWrite = Math.min(chunk.length, out.length - written);
-        out.set(chunk.subarray(0, toWrite), written);
-        written += toWrite;
-        if (toWrite < chunk.length) {
-          ringBuffer[0] = chunk.subarray(toWrite);
-        } else {
-          ringBuffer.shift();
+    let writeProcessor: ScriptProcessorNode | null = null;
+    let processorStarted = false;
+
+    function ensureProcessor() {
+      if (processorStarted || ringBuffer.length < 3) return;
+      processorStarted = true;
+      writeProcessor = audioCtx.createScriptProcessor(2048, 0, 1);
+      writeProcessor.connect(vcDest);
+      writeProcessor.onaudioprocess = (e) => {
+        const out = e.outputBuffer.getChannelData(0);
+        let written = 0;
+        while (written < out.length && ringBuffer.length > 0) {
+          const chunk = ringBuffer[0];
+          const toWrite = Math.min(chunk.length, out.length - written);
+          out.set(chunk.subarray(0, toWrite), written);
+          written += toWrite;
+          if (toWrite < chunk.length) {
+            ringBuffer[0] = chunk.subarray(toWrite);
+          } else {
+            ringBuffer.shift();
+          }
         }
-      }
-      // Fill rest with silence
-      if (written < out.length) {
-        out.fill(0, written);
-      }
-    };
+        if (written < out.length) out.fill(0, written);
+      };
+    }
 
     meanvcWs.addEventListener("message", (event: MessageEvent) => {
       if (typeof event.data === "string") return;
@@ -171,6 +175,7 @@ const source = audioCtx.createMediaStreamSource(stream);
       if (float32.length === 0) return;
       userPcmRef.current.push(new Float32Array(float32));
       ringBuffer.push(new Float32Array(float32));
+      ensureProcessor();
     });
 
 // Keep AudioContext alive during streaming
