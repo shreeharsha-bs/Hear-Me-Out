@@ -14,9 +14,17 @@ function App() {
 
   return (
     <div className="mx-auto flex max-w-6xl flex-col px-4 py-4 sm:px-8 sm:py-6 h-screen overflow-hidden">
-      <header className="mb-4 flex flex-col gap-1 sm:flex-row sm:items-baseline sm:gap-3 sm:mb-5">
-        <h1 className="text-2xl font-semibold tracking-tight">Hear Me Out</h1>
-        <p className="text-sm text-muted-foreground">Speech-to-speech evaluation platform</p>
+      <header className="mb-4 flex items-center gap-4 sm:mb-5">
+        <img src="/KTH_Logo.jpg" alt="KTH Logo" className="h-16 sm:h-20 flex-shrink-0" />
+        <div className="flex flex-col gap-0.5 min-w-0">
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight">Hear Me Out</h1>
+          <p className="text-xs sm:text-sm text-muted-foreground leading-snug">
+            Interactive evaluation and bias discovery platform for speech-to-speech conversational AI
+          </p>
+          <p className="text-[11px] sm:text-xs text-muted-foreground/70">
+            KTH Royal Institute of Technology, Stockholm, Sweden
+          </p>
+        </div>
       </header>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-1 flex-col min-h-0">
