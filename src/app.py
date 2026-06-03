@@ -49,8 +49,9 @@ def _init_whisper():
 
         device = "cuda" if torch.cuda.is_available() else "cpu"
         compute = "int8_float16" if torch.cuda.is_available() else "int8"
-        whisper_model = WhisperModel("tiny", device=device, compute_type=compute)
-        logger.info(f"Whisper model loaded on {device}")
+        model_size = os.environ.get("WHISPER_MODEL", "small")
+        whisper_model = WhisperModel(model_size, device=device, compute_type=compute)
+        logger.info(f"Whisper model '{model_size}' loaded on {device}")
 
 
 def _init_vad():
