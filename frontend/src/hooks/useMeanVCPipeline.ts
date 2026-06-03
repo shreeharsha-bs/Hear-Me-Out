@@ -141,21 +141,36 @@ const source = audioCtx.createMediaStreamSource(stream);
       console.warn("[MeanVC] Recorder start failed:", e.message);
     }
 
-    // Route MeanVC output → vcDest → Recorder captures
-    let vcOutputTime = audioCtx.currentTime + 0.5;
+    // Route MeanVC output → ring buffer → steady ScriptProcessor → vcDest → Recorder
+    const ringBuffer: Float32Array[] = [];
+    const writeProcessor = audioCtx.createScriptProcessor(2048, 0, 1);
+    writeProcessor.connect(vcDest);
+    writeProcessor.onaudioprocess = (e) => {
+      const out = e.outputBuffer.getChannelData(0);
+      let written = 0;
+      while (written < out.length && ringBuffer.length > 0) {
+        const chunk = ringBuffer[0];
+        const toWrite = Math.min(chunk.length, out.length - written);
+        out.set(chunk.subarray(0, toWrite), written);
+        written += toWrite;
+        if (toWrite < chunk.length) {
+          ringBuffer[0] = chunk.subarray(toWrite);
+        } else {
+          ringBuffer.shift();
+        }
+      }
+      // Fill rest with silence
+      if (written < out.length) {
+        out.fill(0, written);
+      }
+    };
 
     meanvcWs.addEventListener("message", (event: MessageEvent) => {
       if (typeof event.data === "string") return;
       const float32 = new Float32Array(event.data);
       if (float32.length === 0) return;
       userPcmRef.current.push(new Float32Array(float32));
-      const buf = audioCtx.createBuffer(1, float32.length, 16000);
-      buf.getChannelData(0).set(float32);
-      const bufSource = audioCtx.createBufferSource();
-      bufSource.buffer = buf;
-      bufSource.connect(vcDest);
-      bufSource.start(vcOutputTime);
-      vcOutputTime = Math.max(vcOutputTime + buf.duration, audioCtx.currentTime + 0.01);
+      ringBuffer.push(new Float32Array(float32));
     });
 
 // Keep AudioContext alive during streaming
