@@ -13,6 +13,9 @@ export function getMeanvcLoadTargetUrl(): string {
 const DEFAULT_PROMPT = "You enjoy having a good conversation.";
 
 export function getPersonaplexWsURL(textPrompt?: string): string {
+  // Allow override via URL query param (?personaplex_ws=ws://...)
+  const override = new URLSearchParams(window.location.search).get("personaplex_ws");
+  if (override) return override;
   const wsHost = (import.meta as any).env?.VITE_PERSONAPLEX_HOST || window.location.hostname;
   const voicePrompt = "NATF2.pt";
   const tp = textPrompt || DEFAULT_PROMPT;
