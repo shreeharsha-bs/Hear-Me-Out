@@ -131,18 +131,25 @@ const source = audioCtx.createMediaStreamSource(stream);
     // Override encoder Worker onmessage to route Ogg Opus → PersonaPlex
     if (vcRecorder.encoder) {
       vcRecorder.encoder.onmessage = (e: MessageEvent) => {
+        console.log("[MeanVC] Encoder output:", e.data?.command, e.data?.byteLength);
         if (e.data?.command === "page" && e.data.page) {
           onAudioRef.current(e.data.page);
         }
       };
+    } else {
+      console.error("[MeanVC] No encoder available on Recorder!");
     }
 
     // Accumulate MeanVC output PCM → encode via Worker
     let vcOutputTime = audioCtx.currentTime + 0.5;
     let pcmEncodeBuf = new Float32Array(0);
     const ENC_FRAME = 640; // 40ms at 16000Hz
+    let encSent = 0;
+    let msgRecd = 0;
 
     meanvcWs.addEventListener("message", (event: MessageEvent) => {
+      msgRecd++;
+      if (msgRecd <= 3) console.log("[MeanVC] Rcvd msg", msgRecd, (event.data as ArrayBuffer)?.byteLength);
       if (typeof event.data === "string") return;
       const float32 = new Float32Array(event.data);
       if (float32.length === 0) return;
@@ -163,12 +170,14 @@ const source = audioCtx.createMediaStreamSource(stream);
         merged.set(float32, pcmEncodeBuf.length);
         let off = 0;
         while (off + ENC_FRAME <= merged.length) {
+          encSent++;
           vcRecorder.encoder.postMessage({
             command: "encode",
             buffers: [merged.slice(off, off + ENC_FRAME)],
           });
           off += ENC_FRAME;
         }
+        if (encSent <= 3) console.log("[MeanVC] Encoder frames sent:", encSent);
         pcmEncodeBuf = merged.slice(off);
       }
     });
