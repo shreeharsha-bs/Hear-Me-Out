@@ -504,7 +504,7 @@ export function ConversationView({ ws, recorder }: Props) {
             </div>
 
             {/* MeanVC Voice Conversion Pipeline */}
-            <div className="w-full rounded-lg border border-purple-500/30 bg-purple-500/5 p-2.5 space-y-2">
+            <div className="w-full rounded-lg border border-purple-500/50 bg-purple-500/10 p-2.5 space-y-2">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <Wand2 className="size-3.5 text-purple-400" />
