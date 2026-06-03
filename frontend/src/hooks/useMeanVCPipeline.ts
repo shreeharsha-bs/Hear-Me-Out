@@ -114,7 +114,8 @@ const source = audioCtx.createMediaStreamSource(stream);
       setState(s => ({ ...s, vcStatus: "MeanVC WebSocket error" }));
 });
 
-    // 5b. Use Recorder to init Ogg Opus encoder, then feed MeanVC PCM
+    // 5b. Use Recorder with sourceNode to capture from vcDest (MeanVC output)
+    const vcSourceNode = audioCtx.createMediaStreamSource(vcDest.stream);
     const vcRecorder = new Recorder({
       encoderPath: "https://cdn.jsdelivr.net/npm/opus-recorder@latest/dist/encoderWorker.min.js",
       streamPages: true,
@@ -124,53 +125,38 @@ const source = audioCtx.createMediaStreamSource(stream);
       maxFramesPerPage: 1,
       numberOfChannels: 1,
       monitorGain: 0,
+      sourceNode: vcSourceNode,
     });
     vcRecorderRef.current = vcRecorder;
 
-    // Start recorder to initialize the encoder Worker
-    try { await vcRecorder.start(); console.log("[MeanVC] Recorder started, encoder:", !!vcRecorder.encoder); }
-    catch (e: any) { console.warn("[MeanVC] Recorder.start failed:", e.message); }
+    vcRecorder.ondataavailable = (arrayBuffer: ArrayBuffer) => {
+      onAudioRef.current(arrayBuffer);
+    };
 
-    // Access encoder Worker (may be vcRecorder.encoder after start)
-    const encoderW = vcRecorder.encoder || (vcRecorder as any)._encoder || (vcRecorder as any).worker;
-    console.log("[MeanVC] Encoder Worker:", !!encoderW, Object.keys(vcRecorder).slice(0, 15));
-
-    if (encoderW) {
-      encoderW.onmessage = (e: MessageEvent) => {
-        if (e.data?.command === "page" && e.data.page) onAudioRef.current(e.data.page);
-      };
-    } else {
-      // Fallback: use vcRecorder.ondataavailable from mic capture
-      vcRecorder.ondataavailable = (buf: ArrayBuffer) => onAudioRef.current(buf);
+    // Start Recorder on vcDest source node
+    try {
+      await vcRecorder.start();
+      console.log("[MeanVC] Recorder started on vcDest sourceNode");
+    } catch (e: any) {
+      console.warn("[MeanVC] Recorder start failed:", e.message);
     }
 
-    // Feed MeanVC PCM to encoder
-    let pcmBuf = new Float32Array(0);
-    const FRAME = 640;
+    // Route MeanVC output → vcDest → Recorder captures
+    let vcOutputTime = audioCtx.currentTime + 0.5;
 
     meanvcWs.addEventListener("message", (event: MessageEvent) => {
       if (typeof event.data === "string") return;
-      const d = new Float32Array(event.data);
-      if (d.length === 0) return;
-      userPcmRef.current.push(new Float32Array(d));
-      const b = audioCtx.createBuffer(1, d.length, 16000);
-      b.getChannelData(0).set(d);
-      const bs = audioCtx.createBufferSource();
-      bs.buffer = b; bs.connect(vcDest); bs.start(audioCtx.currentTime + 0.01);
-      if (encoderW) {
-        const m = new Float32Array(pcmBuf.length + d.length);
-        m.set(pcmBuf, 0); m.set(d, pcmBuf.length);
-        let off = 0;
-        while (off + FRAME <= m.length) {
-          encoderW.postMessage({ command: "encode", buffers: [m.slice(off, off + FRAME)] });
-          off += FRAME;
-        }
-        pcmBuf = m.slice(off);
-      }
+      const float32 = new Float32Array(event.data);
+      if (float32.length === 0) return;
+      userPcmRef.current.push(new Float32Array(float32));
+      const buf = audioCtx.createBuffer(1, float32.length, 16000);
+      buf.getChannelData(0).set(float32);
+      const bufSource = audioCtx.createBufferSource();
+      bufSource.buffer = buf;
+      bufSource.connect(vcDest);
+      bufSource.start(vcOutputTime);
+      vcOutputTime = Math.max(vcOutputTime + buf.duration, audioCtx.currentTime + 0.01);
     });
-
-    // Stop mic capture if we have the encoder
-    if (encoderW) { try { vcRecorder.stop?.(); } catch {} }
 
 // Keep AudioContext alive during streaming
     resumeRef.current = setInterval(() => {
