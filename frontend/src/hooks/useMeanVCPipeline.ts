@@ -77,6 +77,7 @@ export function useMeanVCPipeline(
     // 3. ScriptProcessor for mic PCM
 const source = audioCtx.createMediaStreamSource(stream);
     const processor = audioCtx.createScriptProcessor(2048, 1, 1);
+    const vcDest = audioCtx.createMediaStreamDestination();
 
     // 4. Connect to MeanVC WS
     const meanvcUrl = getMeanvcWsUrl(state.vcTargetId!, audioCtx.sampleRate, initialSteps);
@@ -113,74 +114,61 @@ const source = audioCtx.createMediaStreamSource(stream);
       setState(s => ({ ...s, vcStatus: "MeanVC WebSocket error" }));
 });
 
-    // 5b. Use AudioEncoder for Opus + Ogg wrapping → PersonaPlex
-    let pageSeq = 0;
-    const streamSerial = Math.floor(Math.random() * 0xFFFFFFFF);
+    // 5b. Use Recorder with sourceNode to capture from vcDest (MeanVC output only)
+    const vcSourceNode = audioCtx.createMediaStreamSource(vcDest.stream);
+    const vcRecorder = new Recorder({
+      encoderPath: "https://cdn.jsdelivr.net/npm/opus-recorder@latest/dist/encoderWorker.min.js",
+      streamPages: true,
+      encoderApplication: 2049,
+      encoderFrameSize: 40,
+      encoderSampleRate: 16000,
+      maxFramesPerPage: 1,
+      numberOfChannels: 1,
+      monitorGain: 0,
+      recordingGain: 1,
+      sourceNode: vcSourceNode,
+    });
+    vcRecorderRef.current = vcRecorder;
 
-    function oggPage(data: Uint8Array, granule = 0, flags = 0): ArrayBuffer {
-      const hdr = 27 + 1;
-      const page = new ArrayBuffer(hdr + data.length);
-      const v = new DataView(page);
-      const ws = (o: number, s: string) => { for (let i=0;i<s.length;i++) v.setUint8(o+i, s.charCodeAt(i)); };
-      ws(0, "OggS"); v.setUint8(4, 0); v.setUint8(5, flags);
-      v.setBigInt64(6, BigInt(granule), true);
-      v.setUint32(14, streamSerial, true); v.setUint32(18, pageSeq++, true);
-      v.setUint32(22, 0, true); v.setUint8(26, 1); v.setUint8(27, data.length);
-      new Uint8Array(page, hdr).set(data);
-      return page;
+    vcRecorder.ondataavailable = (arrayBuffer: ArrayBuffer) => {
+      onAudioRef.current(arrayBuffer);
+    };
+
+    try {
+      await vcRecorder.start();
+      console.log("[MeanVC] Recorder started on vcDest sourceNode");
+    } catch (e: any) {
+      console.warn("[MeanVC] Recorder start failed:", e.message);
     }
 
-    // OpusHead: "OpusHead" + version(1) + channels(1) + pre_skip(2) + rate(4) + gain(2) + family(1)
-    const head = new Uint8Array(19);
-    head.set(new TextEncoder().encode("OpusHead"), 0);
-    head[8] = 1; head[9] = 1; // version=1, channels=1
-    head[10] = 0x38; head[11] = 0x01; // pre-skip = 312 (standard, at input rate)
-    new DataView(head.buffer).setUint32(12, 16000, true); // sample rate LE
-    head[16] = 0; head[17] = 0; // output gain = 0
-    head[18] = 0; // mapping family = 0
-    onAudioRef.current(oggPage(head, 0, 2)); // BOS
+    // Route MeanVC output → ring buffer → steady ScriptProcessor → vcDest → Recorder
+    const ringBuffer: Float32Array[] = [];
+    let writeProcessor: ScriptProcessorNode | null = null;
+    let procStarted = false;
 
-    // OpusTags
-    const tags = new TextEncoder().encode("OpusTags");
-    onAudioRef.current(oggPage(tags, 0, 0));
-
-    let encCount = 0;
-    const encoder = new AudioEncoder({
-      output: (chunk) => {
-        const buf = new Uint8Array(chunk.byteLength);
-        chunk.copyTo(buf);
-        encCount++;
-        if (encCount <= 3) console.log("[MeanVC] Ogg page", encCount, "bytes:", buf.length);
-        onAudioRef.current(oggPage(buf));
-      },
-      error: (e) => console.error("[MeanVC] Encoder error:", e),
-    });
-    encoder.configure({ codec: "opus", sampleRate: 16000, numberOfChannels: 1, bitrate: 64000 });
-    console.log("[MeanVC] AudioEncoder with Ogg wrapper ready");
-    vcRecorderRef.current = encoder as any;
-
-    let pcmBuf = new Float32Array(0);
-    const FRAME = 320; // 20ms at 16000Hz (matches Opus internal frame size)
+    function ensureProcessor() {
+      if (procStarted || ringBuffer.length < 3) return;
+      procStarted = true;
+      writeProcessor = audioCtx.createScriptProcessor(2048, 0, 1);
+      writeProcessor.connect(vcDest);
+      writeProcessor.onaudioprocess = () => {
+        if (ringBuffer.length === 0) return;
+        // Push data to vcDest even if buffer is too small
+        const chunk = ringBuffer.shift()!;
+        const buf = audioCtx.createBuffer(1, chunk.length, 16000);
+        buf.getChannelData(0).set(chunk);
+        const bs = audioCtx.createBufferSource();
+        bs.buffer = buf; bs.connect(vcDest); bs.start();
+      };
+    }
 
     meanvcWs.addEventListener("message", (event: MessageEvent) => {
       if (typeof event.data === "string") return;
       const float32 = new Float32Array(event.data);
       if (float32.length === 0) return;
       userPcmRef.current.push(new Float32Array(float32));
-
-      if (encoder.state === "configured") {
-        const merged = new Float32Array(pcmBuf.length + float32.length);
-        merged.set(pcmBuf, 0); merged.set(float32, pcmBuf.length);
-        let off = 0;
-        while (off + FRAME <= merged.length) {
-          try {
-            const f = new AudioData({ format: "f32-planar", sampleRate: 16000, numberOfFrames: FRAME, numberOfChannels: 1, timestamp: 0, data: merged.slice(off, off + FRAME) });
-            encoder.encode(f); f.close();
-          } catch {}
-          off += FRAME;
-        }
-        pcmBuf = merged.slice(off);
-      }
+      ringBuffer.push(new Float32Array(float32));
+      ensureProcessor();
     });
 
 // Keep AudioContext alive during streaming
