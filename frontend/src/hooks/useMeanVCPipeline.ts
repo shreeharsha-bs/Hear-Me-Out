@@ -29,6 +29,7 @@ export function useMeanVCPipeline(
   const vcRecorderRef = useRef<typeof Recorder | null>(null);
   const onAudioRef = useRef(onPersonaplexAudio);
   const userPcmRef = useRef<Float32Array[]>([]);
+  const resumeRef = useRef<ReturnType<typeof setInterval> | null>(null);
   onAudioRef.current = onPersonaplexAudio;
 
   const uploadTarget = useCallback(async (file: File) => {
@@ -98,9 +99,9 @@ const source = audioCtx.createMediaStreamSource(stream);
         }
       };
       source.connect(processor);
-      // Connect processor to a silent gain node (ScriptProcessor needs a destination to fire)
+      // Connect to near-silent output (gain 0.001) to keep ScriptProcessor alive
       const gainNode = audioCtx.createGain();
-      gainNode.gain.value = 0;
+      gainNode.gain.value = 0.001;
       processor.connect(gainNode);
       gainNode.connect(audioCtx.destination);
     });
@@ -150,7 +151,12 @@ vcRecorder.ondataavailable = (arrayBuffer: ArrayBuffer) => {
       onAudioRef.current(arrayBuffer);
     };
 
-    // 5c. Start the Recorder on the VC output stream
+    // Keep AudioContext alive during streaming
+    resumeRef.current = setInterval(() => {
+      if (pcmContextRef.current?.state === "suspended") {
+        pcmContextRef.current.resume();
+      }
+    }, 1000);
     try {
       await vcRecorder.start(vcDest.stream);
       console.log("[MeanVC] Recorder started on VC stream");
@@ -162,6 +168,7 @@ vcRecorder.ondataavailable = (arrayBuffer: ArrayBuffer) => {
 }, [state.vcTargetId]);
 
   const stopVCStream = useCallback(() => {
+    clearInterval(resumeRef.current);
     meanvcWsRef.current?.close();
     meanvcWsRef.current = null;
     vcRecorderRef.current?.close?.();

@@ -66,7 +66,6 @@ export function ConversationView({ ws, recorder }: Props) {
   const [duration, setDuration] = useState(0)
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const scrollRef = useRef<HTMLDivElement | null>(null)
-  const [textPrompt, setTextPrompt] = useState("You enjoy having a good conversation.")
 
   // Auto-scroll to active turn during playback
   useEffect(() => {
