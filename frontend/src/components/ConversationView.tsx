@@ -445,7 +445,7 @@ export function ConversationView({ ws, recorder }: Props) {
             <div className="w-full">
               <textarea
                 className="w-full rounded-md border bg-background px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground resize-none"
-                rows={2}
+                rows={3}
                 value={textPrompt}
                 onChange={(e) => setTextPrompt(e.target.value)}
                 disabled={isConnected}
