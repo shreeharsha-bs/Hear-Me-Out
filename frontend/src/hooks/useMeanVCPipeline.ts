@@ -182,10 +182,10 @@ const source = audioCtx.createMediaStreamSource(stream);
   }, [state.vcTargetId]);
 
   const stopVCStream = useCallback(() => {
-    clearInterval(resumeRef.current);
+    if (resumeRef.current) clearInterval(resumeRef.current);
     meanvcWsRef.current?.close();
     meanvcWsRef.current = null;
-    (vcRecorderRef.current as AudioEncoder)?.close();
+    (vcRecorderRef.current as any)?.stop?.();
     vcRecorderRef.current = null;
     pcmStreamRef.current?.getTracks().forEach(t => t.stop());
     pcmStreamRef.current = null;
