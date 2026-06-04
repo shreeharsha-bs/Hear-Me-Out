@@ -58,7 +58,7 @@ export function ControlPanel({
         <Button
           variant={isConnected || hasError ? "destructive" : "default"}
           onClick={isConnected ? onStop : onStart}
-          disabled={isWarming}
+          disabled={isWarming || (vcPipeline.vcEnabled && !vcPipeline.vcTargetId)}
           className={cn(
             "size-12 rounded-full",
             isConnected && "bg-red-500 hover:bg-red-600 text-white border-0 ring-4 ring-red-500/30",
