@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback } from "react";
 import { getMeanvcWsUrl, getMeanvcLoadTargetUrl } from "@/lib/config";
+import { createWavFile } from "@/lib/audio";
 
 declare var Recorder: any;
 
@@ -200,23 +201,9 @@ const source = audioCtx.createMediaStreamSource(stream);
     const combined = new Float32Array(total);
     let offset = 0;
     for (const c of chunks) { combined.set(c, offset); offset += c.length; }
-    const int16 = new Int16Array(combined.length);
-    for (let i = 0; i < combined.length; i++) {
-      int16[i] = Math.max(-32768, Math.min(32767, combined[i] * 32767));
-    }
-    const wav = new ArrayBuffer(44 + int16.length * 2);
-    const view = new DataView(wav);
-    const ws = (off: number, s: string) => { for (let i=0;i<s.length;i++) view.setUint8(off+i, s.charCodeAt(i)); };
-    ws(0, "RIFF"); view.setUint32(4, 36 + int16.length * 2, true);
-    ws(8, "WAVE"); ws(12, "fmt "); view.setUint32(16, 16, true);
-    view.setUint16(20, 1, true); view.setUint16(22, 1, true);
-    view.setUint32(24, 16000, true); view.setUint32(28, 32000, true);
-    view.setUint16(32, 2, true); view.setUint16(34, 16, true);
-    ws(36, "data"); view.setUint32(40, int16.length * 2, true);
-    new Uint8Array(wav, 44).set(new Uint8Array(int16.buffer));
-    console.log("[MeanVC] User WAV:", total, "samples,", wav.byteLength, "bytes");
+    console.log("[MeanVC] User WAV:", total, "samples");
     userPcmRef.current = [];
-    return new Blob([wav], { type: "audio/wav" });
+    return createWavFile(combined, 16000);
   }, []);
 
   const setEnabled = useCallback((enabled: boolean) => {

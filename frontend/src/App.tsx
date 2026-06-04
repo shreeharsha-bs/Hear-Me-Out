@@ -13,6 +13,7 @@ function App() {
   const recorder = useRecorder((data) => ws.sendAudio(data))
   const [activeTab, setActiveTab] = useState("conversation")
 
+
   return (
     <div className="mx-auto flex max-w-6xl flex-col px-4 py-4 sm:px-8 sm:py-6 h-screen overflow-hidden">
       <header className="mb-4 flex items-center gap-4 sm:mb-5">
@@ -56,7 +57,7 @@ function App() {
         </TabsContent>
         <TabsContent value="voice-conversion">
           <div className="mx-auto max-w-lg">
-            <VoiceConversion sourceChunks={recorder.recordedChunks} />
+            <VoiceConversion />
           </div>
         </TabsContent>
         <TabsContent value="metrics">

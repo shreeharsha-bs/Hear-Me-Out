@@ -4,7 +4,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Spinner } from "@/components/ui/spinner"
 import { FieldGroup, Field, FieldLabel } from "@/components/ui/field"
-import { API_BASE } from "@/lib/config"
+import { compareMetrics } from "@/services/api"
 import { GitCompare, AlertCircle, Upload, Volume2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -57,12 +57,7 @@ export function MetricsComparison() {
     setComparing(true)
     setError(null)
     try {
-      const fd = new FormData()
-      fd.append("source_audio", sourceFile)
-      fd.append("target_audio", targetFile)
-      const resp = await fetch(`${API_BASE}/api/metrics-comparison`, { method: "POST", body: fd })
-      if (!resp.ok) throw new Error(await resp.text())
-      setPlotUrl(URL.createObjectURL(await resp.blob()))
+      setPlotUrl(URL.createObjectURL(await compareMetrics(sourceFile, targetFile)))
     } catch (e: any) {
       setError(e.message || "Comparison failed")
     } finally { setComparing(false) }

@@ -4,13 +4,9 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Spinner } from "@/components/ui/spinner"
 import { FieldGroup, Field, FieldLabel } from "@/components/ui/field"
-import { API_BASE } from "@/lib/config"
+import { convertVoice } from "@/services/api"
 import { Wand2, Play, AlertCircle, Upload, Volume2 } from "lucide-react"
 import { cn } from "@/lib/utils"
-
-interface Props {
-  sourceChunks?: Blob[]
-}
 
 function UploadZone({ file, setFile }: { file: File | null; setFile: (f: File | null) => void }) {
   const inputRef = useRef<HTMLInputElement>(null)
@@ -49,7 +45,7 @@ function UploadZone({ file, setFile }: { file: File | null; setFile: (f: File | 
   )
 }
 
-export function VoiceConversion({ sourceChunks: _sourceChunks }: Props) {
+export function VoiceConversion() {
   const [sourceFile, setSourceFile] = useState<File | null>(null)
   const [targetFile, setTargetFile] = useState<File | null>(null)
   const [converting, setConverting] = useState(false)
@@ -61,12 +57,7 @@ export function VoiceConversion({ sourceChunks: _sourceChunks }: Props) {
     setConverting(true)
     setError(null)
     try {
-      const fd = new FormData()
-      fd.append("source_audio", sourceFile)
-      fd.append("target_audio", targetFile)
-      const resp = await fetch(`${API_BASE}/api/voice-conversion`, { method: "POST", body: fd })
-      if (!resp.ok) throw new Error(await resp.text())
-      setResultUrl(URL.createObjectURL(await resp.blob()))
+      setResultUrl(URL.createObjectURL(await convertVoice(sourceFile, targetFile)))
     } catch (e: any) {
       setError(e.message || "Conversion failed")
     } finally { setConverting(false) }

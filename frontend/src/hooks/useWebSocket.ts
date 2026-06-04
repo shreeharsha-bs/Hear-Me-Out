@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from "react";
-import { getPersonaplexWsURL, API_BASE } from "@/lib/config";
+import { getPersonaplexWsURL } from "@/lib/config";
 import { createWavFile } from "@/lib/audio";
 
 export interface Transcript {
@@ -24,26 +24,6 @@ interface OggOpusDecoder {
     sampleRate: number;
   }>;
   free(): void;
-}
-
-export async function transcribeRecording(chunks: Blob[]): Promise<{ text: string; segments: { start: number; end: number; text: string }[] }> {
-  const blob = new Blob(chunks, { type: "audio/webm" });
-  const arrayBuffer = await blob.arrayBuffer();
-  const ctx = new AudioContext();
-  const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
-  ctx.close();
-
-  const wavBlob = createWavFile(audioBuffer.getChannelData(0), audioBuffer.sampleRate);
-  const formData = new FormData();
-  formData.append("audio", wavBlob, "recording.wav");
-
-  const resp = await fetch(`${API_BASE}/api/transcribe`, {
-    method: "POST",
-    body: formData,
-  });
-
-  if (!resp.ok) throw new Error(`${resp.status}: ${await resp.text()}`);
-  return await resp.json();
 }
 
 export function useWebSocket() {

@@ -1,0 +1,38 @@
+import { API_BASE } from "@/lib/config"
+import { createWavFile } from "@/lib/audio"
+
+export async function transcribeRecording(
+  chunks: Blob[]
+): Promise<{ text: string; segments: { start: number; end: number; text: string }[] }> {
+  const blob = new Blob(chunks, { type: "audio/webm" })
+  const arrayBuffer = await blob.arrayBuffer()
+  const ctx = new AudioContext()
+  const audioBuffer = await ctx.decodeAudioData(arrayBuffer)
+  ctx.close()
+
+  const wavBlob = createWavFile(audioBuffer.getChannelData(0), audioBuffer.sampleRate)
+  const formData = new FormData()
+  formData.append("audio", wavBlob, "recording.wav")
+
+  const resp = await fetch(`${API_BASE}/api/transcribe`, { method: "POST", body: formData })
+  if (!resp.ok) throw new Error(`${resp.status}: ${await resp.text()}`)
+  return resp.json()
+}
+
+export async function convertVoice(sourceFile: File, targetFile: File): Promise<Blob> {
+  const fd = new FormData()
+  fd.append("source_audio", sourceFile)
+  fd.append("target_audio", targetFile)
+  const resp = await fetch(`${API_BASE}/api/voice-conversion`, { method: "POST", body: fd })
+  if (!resp.ok) throw new Error(await resp.text())
+  return resp.blob()
+}
+
+export async function compareMetrics(sourceFile: File, targetFile: File): Promise<Blob> {
+  const fd = new FormData()
+  fd.append("source_audio", sourceFile)
+  fd.append("target_audio", targetFile)
+  const resp = await fetch(`${API_BASE}/api/metrics-comparison`, { method: "POST", body: fd })
+  if (!resp.ok) throw new Error(await resp.text())
+  return resp.blob()
+}
