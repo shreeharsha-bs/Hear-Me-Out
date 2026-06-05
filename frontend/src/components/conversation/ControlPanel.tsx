@@ -2,7 +2,8 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Spinner } from "@/components/ui/spinner"
 import { Switch } from "@/components/ui/switch"
-import { Mic, MicOff, ChevronRight, Wand2, Play, Volume2 } from "lucide-react"
+import { Mic, MicOff, ChevronRight, Wand2, Volume2, Pause } from "lucide-react"
+import { useRef, useState } from "react"
 import { cn } from "@/lib/utils"
 import type { useMeanVCPipeline } from "@/hooks/useMeanVCPipeline"
 
@@ -35,6 +36,26 @@ export function ControlPanel({
   onStart, onStop,
   vcPipeline, meanvcSteps, onMeanvcStepsChange,
 }: Props) {
+  const previewAudioRef = useRef<HTMLAudioElement | null>(null)
+  const [previewPlaying, setPreviewPlaying] = useState(false)
+
+  const togglePreview = (e: React.MouseEvent) => {
+    e.preventDefault()
+    if (!vcPipeline.vcTargetUrl) return
+    if (!previewAudioRef.current) {
+      const a = new Audio(vcPipeline.vcTargetUrl)
+      a.onended = () => { setPreviewPlaying(false); previewAudioRef.current = null }
+      a.onpause = () => setPreviewPlaying(false)
+      a.onplay = () => setPreviewPlaying(true)
+      previewAudioRef.current = a
+      a.play()
+    } else if (previewAudioRef.current.paused) {
+      previewAudioRef.current.play()
+    } else {
+      previewAudioRef.current.pause()
+    }
+  }
+
   return (
     <div className="flex flex-col items-center gap-3 px-4 py-4">
       <div className="w-full">
@@ -138,15 +159,11 @@ export function ControlPanel({
                 </p>
                 {vcPipeline.vcTargetUrl && (
                   <button
-                    onClick={(e) => {
-                      e.preventDefault();
-                      const a = new Audio(vcPipeline.vcTargetUrl!);
-                      a.play();
-                    }}
+                    onClick={togglePreview}
                     className="inline-flex items-center justify-center size-5 rounded-full bg-purple-600/20 hover:bg-purple-600/40 transition-colors flex-shrink-0"
-                    title="Preview target voice"
+                    title={previewPlaying ? "Pause preview" : "Preview target voice"}
                   >
-                    <Volume2 className="size-3 text-purple-400" />
+                    {previewPlaying ? <Pause className="size-3 text-purple-400" /> : <Volume2 className="size-3 text-purple-400" />}
                   </button>
                 )}
               </div>
