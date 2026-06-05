@@ -8,6 +8,7 @@ export interface MeanVCPipelineState {
   vcEnabled: boolean;
   vcTargetId: string | null;
   vcTargetFile: string | null;
+  vcTargetUrl: string | null;
   vcStatus: string;
   vcStreaming: boolean;
 }
@@ -20,6 +21,7 @@ export function useMeanVCPipeline(
     vcEnabled: false,
     vcTargetId: null,
     vcTargetFile: null,
+    vcTargetUrl: null,
     vcStatus: "",
     vcStreaming: false,
   });
@@ -34,7 +36,10 @@ export function useMeanVCPipeline(
   onAudioRef.current = onPersonaplexAudio;
 
   const uploadTarget = useCallback(async (file: File) => {
-    setState(s => ({ ...s, vcTargetFile: file.name, vcStatus: "Loading target voice..." }));
+    const url = URL.createObjectURL(file);
+    // Revoke previous URL
+    if (state.vcTargetUrl) URL.revokeObjectURL(state.vcTargetUrl);
+    setState(s => ({ ...s, vcTargetFile: file.name, vcTargetUrl: url, vcStatus: "Loading target voice..." }));
     const fd = new FormData();
     fd.append("wav", file);
     try {

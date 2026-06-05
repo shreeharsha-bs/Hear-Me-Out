@@ -2,7 +2,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Spinner } from "@/components/ui/spinner"
 import { Switch } from "@/components/ui/switch"
-import { Mic, MicOff, ChevronRight, Wand2 } from "lucide-react"
+import { Mic, MicOff, ChevronRight, Wand2, Play, Volume2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { useMeanVCPipeline } from "@/hooks/useMeanVCPipeline"
 
@@ -132,9 +132,24 @@ export function ControlPanel({
               />
             </div>
             {vcPipeline.vcStatus && (
-              <p className={`text-[10px] ${vcPipeline.vcStatus.includes("Error") ? "text-red-400" : "text-green-400"}`}>
-                {vcPipeline.vcStatus}
-              </p>
+              <div className="flex items-center gap-1.5">
+                <p className={`text-[10px] flex-1 ${vcPipeline.vcStatus.includes("Error") ? "text-red-400" : "text-green-400"}`}>
+                  {vcPipeline.vcStatus}
+                </p>
+                {vcPipeline.vcTargetUrl && (
+                  <button
+                    onClick={(e) => {
+                      e.preventDefault();
+                      const a = new Audio(vcPipeline.vcTargetUrl!);
+                      a.play();
+                    }}
+                    className="inline-flex items-center justify-center size-5 rounded-full bg-purple-600/20 hover:bg-purple-600/40 transition-colors flex-shrink-0"
+                    title="Preview target voice"
+                  >
+                    <Volume2 className="size-3 text-purple-400" />
+                  </button>
+                )}
+              </div>
             )}
           </>
         )}
