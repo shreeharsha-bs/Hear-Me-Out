@@ -71,6 +71,7 @@ function TabsContent({ className, ...props }: TabsPrimitive.Panel.Props) {
   return (
     <TabsPrimitive.Panel
       data-slot="tabs-content"
+      keepMounted
       className={cn("flex-1 text-sm outline-none", className)}
       {...props}
     />
