@@ -466,7 +466,9 @@ async def cors_middleware(request: web.Request, handler):
 
 
 def create_app() -> web.Application:
-    app = web.Application(middlewares=[cors_middleware])
+    app = web.Application(
+        middlewares=[cors_middleware], client_max_size=10 * 1024 * 1024
+    )
     app.router.add_post("/api/meanvc/load-target", handle_load_target)
     app.router.add_get("/api/meanvc/stream", handle_stream)
     return app
