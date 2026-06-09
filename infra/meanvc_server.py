@@ -530,9 +530,13 @@ async def handle_chat_proxy(request: web.Request) -> web.WebSocketResponse:
 
     chunk_count = 0
     acc_samples = np.array([], dtype=np.float32)
+    # sphn.append_pcm only accepts exact Opus frame sizes; 1920 @ 24 kHz is what
+    # PersonaPlex itself feeds. Buffer the resampled audio and emit fixed frames.
+    OPUS_FRAME = 1920
+    opus_pcm_buf = np.array([], dtype=np.float32)
 
     async def browser_to_pplx():
-        nonlocal chunk_count, acc_samples
+        nonlocal chunk_count, acc_samples, opus_pcm_buf
         async for msg in browser_ws:
             if msg.type == web.WSMsgType.BINARY:
                 incoming = np.frombuffer(msg.data, dtype=np.float32).copy()
@@ -565,18 +569,23 @@ async def handle_chat_proxy(request: web.Request) -> web.WebSocketResponse:
                         continue
 
                     # (a) forward converted audio to PersonaPlex as Opus.
-                    # sphn encodes at 24 kHz, so upsample the 16 kHz VC output.
+                    # sphn encodes at 24 kHz, so upsample the 16 kHz VC output,
+                    # then hand the encoder exact 1920-sample frames.
                     vc_wav_24k = (
                         out_resampler(torch.from_numpy(vc_wav).unsqueeze(0))
                         .squeeze(0)
                         .numpy()
                     )
-                    opus_writer.append_pcm(vc_wav_24k)
-                    while True:
-                        encoded = opus_writer.read_bytes()
-                        if len(encoded) == 0:
-                            break
-                        await pplx_ws.send_bytes(TAG_AUDIO + encoded)
+                    opus_pcm_buf = np.concatenate([opus_pcm_buf, vc_wav_24k])
+                    while len(opus_pcm_buf) >= OPUS_FRAME:
+                        frame = np.ascontiguousarray(opus_pcm_buf[:OPUS_FRAME])
+                        opus_pcm_buf = opus_pcm_buf[OPUS_FRAME:]
+                        opus_writer.append_pcm(frame)
+                        while True:
+                            encoded = opus_writer.read_bytes()
+                            if len(encoded) == 0:
+                                break
+                            await pplx_ws.send_bytes(TAG_AUDIO + encoded)
 
                     # (b) send converted PCM (16 kHz) back to browser for downloads
                     if not browser_ws.closed:
