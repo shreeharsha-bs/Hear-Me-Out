@@ -19,7 +19,7 @@ interface Props {
 
 export function ConversationView({ ws, recorder }: Props) {
   const [meanvcSteps, setMeanvcSteps] = useState(8)
-  const vcPipeline = useMeanVCPipeline((data) => ws.sendAudio(data), meanvcSteps)
+  const vcPipeline = useMeanVCPipeline((data) => ws.sendRawAudio(data), meanvcSteps)
 
   const {
     textPrompt, setTextPrompt,

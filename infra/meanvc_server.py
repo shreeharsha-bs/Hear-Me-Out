@@ -7,9 +7,12 @@ import time
 import uuid
 from pathlib import Path
 from threading import Lock
+from urllib.parse import urlencode
 
+import aiohttp
 import librosa
 import numpy as np
+import sphn
 import torch
 import torch.nn as nn
 import torchaudio.compliance.kaldi as kaldi
@@ -453,6 +456,152 @@ async def handle_stream(request: web.Request) -> web.WebSocketResponse:
     return ws
 
 
+# Tag bytes used on the proxy<->browser channel (mirrors PersonaPlex's protocol,
+# plus 0x03 for the converted user voice that the browser keeps for downloads).
+TAG_AUDIO = b"\x01"
+TAG_VC_USER = b"\x03"
+
+# Where PersonaPlex listens. It runs on the same host as MeanVC with self-signed
+# SSL, so the proxy connects over localhost with cert verification disabled.
+PERSONAPLEX_HOST = os.environ.get("PERSONAPLEX_PROXY_HOST", "127.0.0.1")
+PERSONAPLEX_PORT = os.environ.get("PERSONAPLEX_PROXY_PORT", "8000")
+
+
+async def handle_chat_proxy(request: web.Request) -> web.WebSocketResponse:
+    """WebSocket /api/meanvc/chat-proxy - server-side VC bridge to PersonaPlex.
+
+    The browser sends raw float32 PCM mic chunks (like /stream). We convert each
+    chunk with MeanVC, Opus-encode it, and forward it to PersonaPlex over
+    localhost - so the converted audio never makes the wasteful round trip back
+    through the browser. PersonaPlex's framed replies (0x00 handshake, 0x01 Opus
+    audio, 0x02 transcript) are relayed back verbatim. The converted user PCM is
+    also sent back tagged 0x03 so the browser can still assemble the user/merged
+    WAV downloads (this is off the latency-critical path).
+    """
+    target_id = request.query.get("target_id", "default")
+    steps = int(request.query.get("steps", 2))
+    source_sr = int(request.query.get("source_sr", 16000))
+    voice_prompt = request.query.get("voice_prompt", "")
+    text_prompt = request.query.get("text_prompt", "")
+    need_resample = source_sr != 16000
+
+    if need_resample:
+        import torchaudio
+
+        resampler = torchaudio.transforms.Resample(
+            orig_freq=source_sr, new_freq=16000
+        ).to("cpu")
+        logger.info(f"[proxy] Resampling enabled: {source_sr}Hz -> 16000Hz")
+
+    browser_ws = web.WebSocketResponse()
+    await browser_ws.prepare(request)
+
+    if target_id not in targets:
+        await browser_ws.send_json({"error": f"Unknown target_id: {target_id}"})
+        await browser_ws.close()
+        return browser_ws
+
+    with targets_lock:
+        spk_emb, prompt_mel = targets[target_id]
+
+    session = InferenceSession(models, spk_emb, prompt_mel, steps=steps)
+    # 16 kHz mirrors the browser's previous VC Opus encoder; PersonaPlex's
+    # OpusStreamReader(24000) resamples to its mimi rate on decode.
+    opus_writer = sphn.OpusStreamWriter(16000)
+    loop = asyncio.get_event_loop()
+
+    qs = urlencode({"voice_prompt": voice_prompt, "text_prompt": text_prompt})
+    pplx_url = f"wss://{PERSONAPLEX_HOST}:{PERSONAPLEX_PORT}/api/chat?{qs}"
+    logger.info(f"[proxy] Connecting to PersonaPlex: {pplx_url}")
+
+    client = aiohttp.ClientSession()
+    try:
+        pplx_ws = await client.ws_connect(pplx_url, ssl=False, max_msg_size=0)
+    except Exception as e:
+        logger.error(f"[proxy] Failed to connect to PersonaPlex: {e}")
+        await browser_ws.send_json({"error": f"PersonaPlex unavailable: {e}"})
+        await browser_ws.close()
+        await client.close()
+        return browser_ws
+
+    chunk_count = 0
+    acc_samples = np.array([], dtype=np.float32)
+
+    async def browser_to_pplx():
+        nonlocal chunk_count, acc_samples
+        async for msg in browser_ws:
+            if msg.type == web.WSMsgType.BINARY:
+                incoming = np.frombuffer(msg.data, dtype=np.float32).copy()
+                if need_resample:
+                    t = torch.from_numpy(incoming).unsqueeze(0)
+                    incoming = resampler(t).squeeze(0).numpy()
+                acc_samples = np.concatenate([acc_samples, incoming])
+
+                while len(acc_samples) >= session.CHUNK:
+                    chunk = acc_samples[: session.CHUNK]
+                    acc_samples = acc_samples[session.CHUNK :]
+                    chunk_count += 1
+
+                    if chunk_count == 1:
+                        # First chunk is warmup padding; produce but don't forward.
+                        chunk = np.concatenate(
+                            [chunk, np.zeros(720, dtype=np.float32)]
+                        )
+                        await loop.run_in_executor(
+                            None, session.inference_one_chunk, chunk
+                        )
+                        continue
+
+                    try:
+                        vc_wav = await loop.run_in_executor(
+                            None, session.inference_one_chunk, chunk
+                        )
+                    except Exception as e:
+                        logger.error(f"[proxy] Inference error chunk {chunk_count}: {e}")
+                        continue
+
+                    # (a) forward converted audio to PersonaPlex as Opus
+                    opus_writer.append_pcm(vc_wav)
+                    while True:
+                        encoded = opus_writer.read_bytes()
+                        if len(encoded) == 0:
+                            break
+                        await pplx_ws.send_bytes(TAG_AUDIO + encoded)
+
+                    # (b) send converted PCM back to browser for downloads
+                    if not browser_ws.closed:
+                        await browser_ws.send_bytes(TAG_VC_USER + vc_wav.tobytes())
+
+            elif msg.type in (web.WSMsgType.CLOSE, web.WSMsgType.ERROR):
+                break
+
+    async def pplx_to_browser():
+        async for msg in pplx_ws:
+            if msg.type == aiohttp.WSMsgType.BINARY:
+                if not browser_ws.closed:
+                    await browser_ws.send_bytes(msg.data)
+            elif msg.type in (aiohttp.WSMsgType.CLOSE, aiohttp.WSMsgType.ERROR):
+                break
+
+    tasks = [
+        asyncio.create_task(browser_to_pplx()),
+        asyncio.create_task(pplx_to_browser()),
+    ]
+    try:
+        _, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+        for task in pending:
+            task.cancel()
+        await asyncio.gather(*pending, return_exceptions=True)
+    finally:
+        await pplx_ws.close()
+        await client.close()
+        if not browser_ws.closed:
+            await browser_ws.close()
+
+    logger.info(f"[proxy] Closed after {chunk_count} chunks")
+    return browser_ws
+
+
 @web.middleware
 async def cors_middleware(request: web.Request, handler):
     if request.method == "OPTIONS":
@@ -471,6 +620,7 @@ def create_app() -> web.Application:
     )
     app.router.add_post("/api/meanvc/load-target", handle_load_target)
     app.router.add_get("/api/meanvc/stream", handle_stream)
+    app.router.add_get("/api/meanvc/chat-proxy", handle_chat_proxy)
     return app
 
 

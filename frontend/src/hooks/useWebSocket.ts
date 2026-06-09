@@ -1,6 +1,16 @@
 import { useState, useRef, useCallback, useEffect } from "react";
-import { getPersonaplexWsURL } from "@/lib/config";
+import { getPersonaplexWsURL, getChatProxyWsUrl } from "@/lib/config";
 import { createWavFile } from "@/lib/audio";
+
+// When VC is enabled, connect() targets the MeanVC chat-proxy instead of
+// PersonaPlex directly. The proxy converts mic audio server-side and forwards
+// it to PersonaPlex over localhost.
+export interface ProxyDescriptor {
+  targetId: string;
+  sourceSr: number;
+  steps: number;
+  voicePrompt?: string;
+}
 
 export interface Transcript {
   text: string;
@@ -42,6 +52,7 @@ export function useWebSocket() {
     mergedEndRef.current = 0;
   }, []);
   const personaplexOpus = useRef<{ packet: Uint8Array; time: number }[]>([]);
+  const vcUserPcm = useRef<Float32Array[]>([]);
   const conversationStart = useRef(0);
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -109,11 +120,14 @@ export function useWebSocket() {
     }).catch(() => {});
   }, []);
 
-  const connect = useCallback((textPrompt?: string) => {
-    const url = getPersonaplexWsURL(textPrompt);
+  const connect = useCallback((textPrompt?: string, proxy?: ProxyDescriptor) => {
+    const url = proxy
+      ? getChatProxyWsUrl(proxy.targetId, proxy.sourceSr, proxy.steps, textPrompt ?? "", proxy.voicePrompt)
+      : getPersonaplexWsURL(textPrompt);
     console.log("Connecting to:", url);
     setError(null);
     personaplexOpus.current = [];
+    vcUserPcm.current = [];
     conversationStart.current = Date.now();
     intentionalClose.current = false;
 
@@ -168,6 +182,10 @@ export function useWebSocket() {
             }
             return updated;
           });
+        } else if (tag === 3) {
+          // Converted user voice from the proxy (raw float32 PCM @16kHz),
+          // kept only for the user/merged WAV downloads.
+          vcUserPcm.current.push(new Float32Array(payload));
         }
       } catch {
         // Ignore unrecognized messages
@@ -181,6 +199,14 @@ export function useWebSocket() {
       tagged[0] = 1;
       tagged.set(new Uint8Array(data), 1);
       socketRef.current.send(tagged.buffer);
+    }
+  }, []);
+
+  // Raw, untagged binary send — used in proxy/VC mode where the chat-proxy
+  // expects raw float32 mic PCM.
+  const sendRawAudio = useCallback((data: ArrayBuffer) => {
+    if (socketRef.current?.readyState === WebSocket.OPEN) {
+      socketRef.current.send(data);
     }
   }, []);
 
@@ -233,6 +259,19 @@ export function useWebSocket() {
     return createWavFile(combined, 48000);
   }, []);
 
+  // Assemble the converted user voice (0x03 frames) collected in proxy mode.
+  const getVcUserWav = useCallback((): Blob | null => {
+    const chunks = vcUserPcm.current;
+    if (chunks.length === 0) return null;
+    const total = chunks.reduce((s, c) => s + c.length, 0);
+    const combined = new Float32Array(total);
+    let offset = 0;
+    for (const c of chunks) { combined.set(c, offset); offset += c.length; }
+    console.log("[proxy] VC user WAV:", total, "samples");
+    vcUserPcm.current = [];
+    return createWavFile(combined, 16000);
+  }, []);
+
   const getPersonaplexStartTime = useCallback((): number => {
     if (personaplexOpus.current.length === 0) return 0;
     return (personaplexOpus.current[0].time - conversationStart.current) / 1000;
@@ -263,6 +302,8 @@ export function useWebSocket() {
     connect,
     disconnect,
     sendAudio,
+    sendRawAudio,
+    getVcUserWav,
     clearTranscripts,
     clearResponseChunks,
     clearError,

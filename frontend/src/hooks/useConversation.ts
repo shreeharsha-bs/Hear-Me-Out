@@ -28,21 +28,34 @@ export function useConversation(ws: WsState, recorder: RecorderState, vcPipeline
   const [personaplexWavUrl, setPersonaplexWavUrl] = useState<string | null>(null)
   const [mergedWavUrl, setMergedWavUrl] = useState<string | null>(null)
 
-  const { vcEnabled, vcTargetId, vcStreaming, startVCStream, stopVCStream: vcStop, getUserAudioWav } = vcPipeline
+  const { vcEnabled, vcTargetId, vcStreaming, startMic, beginSending, stopVCStream: vcStop } = vcPipeline
   const { isRecording, start: startRecorder } = recorder
+  const sendingBegun = useRef(false)
 
-  const startConversation = useCallback(() => {
+  const startConversation = useCallback(async () => {
     ws.clearTranscripts()
     ws.clearResponseChunks()
     ws.clearError()
     micClicked.current = true
     transcribed.current = false
+    sendingBegun.current = false
     setDiarized(null)
     setUserWavUrl(null)
     setPersonaplexWavUrl(null)
     setMergedWavUrl(null)
-    ws.connect(textPrompt)
-  }, [ws, textPrompt])
+    if (vcEnabled && vcTargetId) {
+      // VC mode: acquire mic first to learn the sample rate, then connect to the
+      // chat-proxy (which speaks PersonaPlex's protocol on this same socket).
+      try {
+        const proxy = await startMic()
+        ws.connect(textPrompt, proxy)
+      } catch {
+        micClicked.current = false
+      }
+    } else {
+      ws.connect(textPrompt)
+    }
+  }, [ws, textPrompt, vcEnabled, vcTargetId, startMic])
 
   const stopConversation = useCallback(() => {
     const wasVC = vcStreaming
@@ -53,7 +66,7 @@ export function useConversation(ws: WsState, recorder: RecorderState, vcPipeline
 
     if (wasVC) {
       ;(async () => {
-        const vcWav = getUserAudioWav()
+        const vcWav = ws.getVcUserWav()
         if (!vcWav) return
         setUserWavUrl(URL.createObjectURL(vcWav))
 
@@ -90,24 +103,26 @@ export function useConversation(ws: WsState, recorder: RecorderState, vcPipeline
         }
       })()
     }
-  }, [recorder, ws, vcStreaming, vcStop, getUserAudioWav])
+  }, [recorder, ws, vcStreaming, vcStop])
 
-  // Start recording after handshake
+  // VC mode: once the proxy relays PersonaPlex's handshake, open the gate so mic
+  // PCM starts flowing. (Mic was already acquired in startConversation.)
+  useEffect(() => {
+    if (ws.handshakeReceived && micClicked.current && vcStreaming && !sendingBegun.current) {
+      sendingBegun.current = true
+      beginSending()
+    }
+  }, [ws.handshakeReceived, vcStreaming, beginSending])
+
+  // Non-VC mode: start recording after handshake
   useEffect(() => {
     if (ws.handshakeReceived && micClicked.current && !isRecording && !vcStreaming) {
-      if (vcEnabled && vcTargetId) {
-        startVCStream().catch(() => {
-          ws.disconnect()
-          micClicked.current = false
-        })
-      } else {
-        startRecorder().catch(() => {
-          ws.disconnect()
-          micClicked.current = false
-        })
-      }
+      startRecorder().catch(() => {
+        ws.disconnect()
+        micClicked.current = false
+      })
     }
-  }, [ws.handshakeReceived, isRecording, vcStreaming, vcEnabled, vcTargetId, startVCStream, startRecorder])
+  }, [ws.handshakeReceived, isRecording, vcStreaming, startRecorder])
 
   // Route PersonaPlex audio into merged capture
   useEffect(() => {
