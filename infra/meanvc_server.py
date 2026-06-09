@@ -505,9 +505,13 @@ async def handle_chat_proxy(request: web.Request) -> web.WebSocketResponse:
         spk_emb, prompt_mel = targets[target_id]
 
     session = InferenceSession(models, spk_emb, prompt_mel, steps=steps)
-    # 16 kHz mirrors the browser's previous VC Opus encoder; PersonaPlex's
-    # OpusStreamReader(24000) resamples to its mimi rate on decode.
-    opus_writer = sphn.OpusStreamWriter(16000)
+    # MeanVC outputs 16 kHz, but sphn's Opus encoder only accepts 24 kHz / 48 kHz
+    # (PersonaPlex itself uses 24 kHz = its mimi rate). So encode at 24 kHz and
+    # resample the converted audio up before feeding the encoder.
+    import torchaudio
+
+    opus_writer = sphn.OpusStreamWriter(24000)
+    out_resampler = torchaudio.transforms.Resample(16000, 24000).to("cpu")
     loop = asyncio.get_event_loop()
 
     qs = urlencode({"voice_prompt": voice_prompt, "text_prompt": text_prompt})
@@ -560,15 +564,21 @@ async def handle_chat_proxy(request: web.Request) -> web.WebSocketResponse:
                         logger.error(f"[proxy] Inference error chunk {chunk_count}: {e}")
                         continue
 
-                    # (a) forward converted audio to PersonaPlex as Opus
-                    opus_writer.append_pcm(vc_wav)
+                    # (a) forward converted audio to PersonaPlex as Opus.
+                    # sphn encodes at 24 kHz, so upsample the 16 kHz VC output.
+                    vc_wav_24k = (
+                        out_resampler(torch.from_numpy(vc_wav).unsqueeze(0))
+                        .squeeze(0)
+                        .numpy()
+                    )
+                    opus_writer.append_pcm(vc_wav_24k)
                     while True:
                         encoded = opus_writer.read_bytes()
                         if len(encoded) == 0:
                             break
                         await pplx_ws.send_bytes(TAG_AUDIO + encoded)
 
-                    # (b) send converted PCM back to browser for downloads
+                    # (b) send converted PCM (16 kHz) back to browser for downloads
                     if not browser_ws.closed:
                         await browser_ws.send_bytes(TAG_VC_USER + vc_wav.tobytes())
 
