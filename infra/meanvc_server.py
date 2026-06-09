@@ -5,6 +5,7 @@ import os
 import sys
 import time
 import uuid
+import wave
 from pathlib import Path
 from threading import Lock
 from urllib.parse import urlencode
@@ -467,6 +468,17 @@ PERSONAPLEX_HOST = os.environ.get("PERSONAPLEX_PROXY_HOST", "127.0.0.1")
 PERSONAPLEX_PORT = os.environ.get("PERSONAPLEX_PROXY_PORT", "8000")
 
 
+def _save_wav(path: str, pcm: np.ndarray, sr: int) -> None:
+    """Write mono float32 PCM (range -1..1) to a 16-bit WAV file."""
+    pcm = np.clip(pcm, -1.0, 1.0)
+    ints = (pcm * 32767.0).astype("<i2")
+    with wave.open(path, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(sr)
+        w.writeframes(ints.tobytes())
+
+
 async def handle_chat_proxy(request: web.Request) -> web.WebSocketResponse:
     """WebSocket /api/meanvc/chat-proxy - server-side VC bridge to PersonaPlex.
 
@@ -513,6 +525,13 @@ async def handle_chat_proxy(request: web.Request) -> web.WebSocketResponse:
     opus_writer = sphn.OpusStreamWriter(24000)
     out_resampler = torchaudio.transforms.Resample(16000, 24000).to("cpu")
     loop = asyncio.get_event_loop()
+
+    # Optional debug capture: decode our own Opus stream with the SAME decoder
+    # PersonaPlex uses, so the saved WAV is exactly what PersonaPlex hears
+    # (post-Opus round trip). Enabled by setting MEANVC_PROXY_DEBUG_DIR.
+    debug_dir = os.environ.get("MEANVC_PROXY_DEBUG_DIR")
+    opus_reader_dbg = sphn.OpusStreamReader(24000) if debug_dir else None
+    debug_pcm: list[np.ndarray] = []
 
     qs = urlencode({"voice_prompt": voice_prompt, "text_prompt": text_prompt})
     pplx_url = f"wss://{PERSONAPLEX_HOST}:{PERSONAPLEX_PORT}/api/chat?{qs}"
@@ -586,6 +605,11 @@ async def handle_chat_proxy(request: web.Request) -> web.WebSocketResponse:
                             if len(encoded) == 0:
                                 break
                             await pplx_ws.send_bytes(TAG_AUDIO + encoded)
+                            if opus_reader_dbg is not None:
+                                opus_reader_dbg.append_bytes(encoded)
+                                pcm = opus_reader_dbg.read_pcm()
+                                if pcm.shape[-1] > 0:
+                                    debug_pcm.append(pcm.astype(np.float32))
 
                     # (b) send converted PCM (16 kHz) back to browser for downloads
                     if not browser_ws.closed:
@@ -616,6 +640,17 @@ async def handle_chat_proxy(request: web.Request) -> web.WebSocketResponse:
         await client.close()
         if not browser_ws.closed:
             await browser_ws.close()
+
+    if debug_dir and debug_pcm:
+        try:
+            os.makedirs(debug_dir, exist_ok=True)
+            out_path = os.path.join(
+                debug_dir, f"pplx_input_{target_id}_{int(time.time())}.wav"
+            )
+            _save_wav(out_path, np.concatenate(debug_pcm), 24000)
+            logger.info(f"[proxy] Saved PersonaPlex-input audio to {out_path}")
+        except Exception as e:
+            logger.error(f"[proxy] Failed to save debug WAV: {e}")
 
     logger.info(f"[proxy] Closed after {chunk_count} chunks")
     return browser_ws
