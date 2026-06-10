@@ -21,6 +21,29 @@ export function ConversationView({ ws, recorder }: Props) {
   const [meanvcSteps, setMeanvcSteps] = useState(8)
   const vcPipeline = useMeanVCPipeline((data) => ws.sendRawAudio(data), meanvcSteps)
 
+  // Audio output routing + live monitor of the converted voice (VC area only).
+  const [audioOutputs, setAudioOutputs] = useState<MediaDeviceInfo[]>([])
+  const [feedbackEnabled, setFeedbackEnabled] = useState(false)
+  const [feedbackDeviceId, setFeedbackDeviceId] = useState("")
+  const [pplxDeviceId, setPplxDeviceId] = useState("")
+  const { setPersonaplexSink, configureFeedback } = ws
+
+  // Enumerate output devices (labels populate once mic permission is granted).
+  useEffect(() => {
+    const update = async () => {
+      try {
+        const devs = await navigator.mediaDevices.enumerateDevices()
+        setAudioOutputs(devs.filter((d) => d.kind === "audiooutput"))
+      } catch { /* ignore */ }
+    }
+    update()
+    navigator.mediaDevices?.addEventListener?.("devicechange", update)
+    return () => navigator.mediaDevices?.removeEventListener?.("devicechange", update)
+  }, [ws.connected])
+
+  useEffect(() => { setPersonaplexSink(pplxDeviceId) }, [pplxDeviceId, ws.connected, setPersonaplexSink])
+  useEffect(() => { configureFeedback(feedbackEnabled, feedbackDeviceId) }, [feedbackEnabled, feedbackDeviceId, configureFeedback])
+
   const {
     textPrompt, setTextPrompt,
     diarized, userWavUrl, personaplexWavUrl, mergedWavUrl,
@@ -87,6 +110,13 @@ export function ConversationView({ ws, recorder }: Props) {
               vcPipeline={vcPipeline}
               meanvcSteps={meanvcSteps}
               onMeanvcStepsChange={setMeanvcSteps}
+              audioOutputs={audioOutputs}
+              feedbackEnabled={feedbackEnabled}
+              onFeedbackEnabledChange={setFeedbackEnabled}
+              feedbackDeviceId={feedbackDeviceId}
+              onFeedbackDeviceChange={setFeedbackDeviceId}
+              pplxDeviceId={pplxDeviceId}
+              onPplxDeviceChange={setPplxDeviceId}
             />
           </CardContent>
         </Card>

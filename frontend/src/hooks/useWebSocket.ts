@@ -45,6 +45,12 @@ export function useWebSocket() {
   const mergedEndRef = useRef(0);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const scheduledEnd = useRef(0);
+  // Optional live monitor of the converted voice (0x03 frames), playable
+  // through a user-selected output device, separate from PersonaPlex output.
+  const feedbackCtxRef = useRef<AudioContext | null>(null);
+  const feedbackEnd = useRef(0);
+  const feedbackEnabledRef = useRef(false);
+  const desiredPplxSinkRef = useRef<string>("");
 
   const setMergedOutput = useCallback((ctx: AudioContext | null, dest: AudioNode | null) => {
     mergedCtxRef.current = ctx;
@@ -73,11 +79,16 @@ export function useWebSocket() {
       }
       audioCtxRef.current = new (window.AudioContext ||
         (window as any).webkitAudioContext)({ sampleRate: 48000 });
+      // Apply any output device chosen before the context existed.
+      if (desiredPplxSinkRef.current) {
+        (audioCtxRef.current as any).setSinkId?.(desiredPplxSinkRef.current).catch(() => {});
+      }
     };
     init();
     return () => {
       decoderRef.current?.free();
       audioCtxRef.current?.close();
+      feedbackCtxRef.current?.close();
     };
   }, []);
 
@@ -118,6 +129,50 @@ export function useWebSocket() {
         mergedEndRef.current = mstart + mbuf.duration;
       }
     }).catch(() => {});
+  }, []);
+
+  // Schedule a chunk of converted-voice PCM (raw float32 @16kHz) into the
+  // feedback context for monitoring.
+  const playFeedback = useCallback((pcm: Float32Array) => {
+    const ctx = feedbackCtxRef.current;
+    if (!ctx || ctx.state === "closed" || pcm.length === 0) return;
+    const buf = ctx.createBuffer(1, pcm.length, 16000);
+    buf.copyToChannel(pcm, 0);
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.connect(ctx.destination);
+    const now = ctx.currentTime;
+    const start = Math.max(feedbackEnd.current, now);
+    src.start(start);
+    feedbackEnd.current = start + buf.duration;
+  }, []);
+
+  // Route PersonaPlex playback to a chosen output device ("" = system default).
+  const setPersonaplexSink = useCallback(async (deviceId: string) => {
+    desiredPplxSinkRef.current = deviceId;
+    const ctx = audioCtxRef.current as any;
+    if (ctx && typeof ctx.setSinkId === "function") {
+      try { await ctx.setSinkId(deviceId || ""); } catch (e) { console.warn("setSinkId (personaplex) failed", e); }
+    }
+  }, []);
+
+  // Enable/disable the converted-voice monitor and pick its output device.
+  const configureFeedback = useCallback(async (enabled: boolean, deviceId: string) => {
+    feedbackEnabledRef.current = enabled;
+    if (!enabled) {
+      await feedbackCtxRef.current?.suspend().catch(() => {});
+      return;
+    }
+    let ctx = feedbackCtxRef.current;
+    if (!ctx || ctx.state === "closed") {
+      ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      feedbackCtxRef.current = ctx;
+      feedbackEnd.current = 0;
+    }
+    await ctx.resume().catch(() => {});
+    if (typeof (ctx as any).setSinkId === "function") {
+      try { await (ctx as any).setSinkId(deviceId || ""); } catch (e) { console.warn("setSinkId (feedback) failed", e); }
+    }
   }, []);
 
   const connect = useCallback((textPrompt?: string, proxy?: ProxyDescriptor) => {
@@ -183,15 +238,17 @@ export function useWebSocket() {
             return updated;
           });
         } else if (tag === 3) {
-          // Converted user voice from the proxy (raw float32 PCM @16kHz),
-          // kept only for the user/merged WAV downloads.
-          vcUserPcm.current.push(new Float32Array(payload));
+          // Converted user voice from the proxy (raw float32 PCM @16kHz):
+          // kept for the user/merged WAV downloads, and optionally monitored live.
+          const pcm = new Float32Array(payload);
+          vcUserPcm.current.push(pcm);
+          if (feedbackEnabledRef.current) playFeedback(pcm);
         }
       } catch {
         // Ignore unrecognized messages
       }
     };
-  }, [playAudio]);
+  }, [playAudio, playFeedback]);
 
   const sendAudio = useCallback((data: ArrayBuffer) => {
     if (socketRef.current?.readyState === WebSocket.OPEN) {
@@ -304,6 +361,8 @@ export function useWebSocket() {
     sendAudio,
     sendRawAudio,
     getVcUserWav,
+    setPersonaplexSink,
+    configureFeedback,
     clearTranscripts,
     clearResponseChunks,
     clearError,

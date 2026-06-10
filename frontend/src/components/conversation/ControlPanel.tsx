@@ -2,7 +2,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Spinner } from "@/components/ui/spinner"
 import { Switch } from "@/components/ui/switch"
-import { Mic, MicOff, ChevronRight, Wand2, Volume2, Pause } from "lucide-react"
+import { Mic, MicOff, ChevronRight, Wand2, Volume2, Pause, Headphones } from "lucide-react"
 import { useRef, useState } from "react"
 import { cn } from "@/lib/utils"
 import type { useMeanVCPipeline } from "@/hooks/useMeanVCPipeline"
@@ -20,6 +20,36 @@ interface Props {
   vcPipeline: VCState
   meanvcSteps: number
   onMeanvcStepsChange: (v: number) => void
+  audioOutputs: MediaDeviceInfo[]
+  feedbackEnabled: boolean
+  onFeedbackEnabledChange: (v: boolean) => void
+  feedbackDeviceId: string
+  onFeedbackDeviceChange: (v: string) => void
+  pplxDeviceId: string
+  onPplxDeviceChange: (v: string) => void
+}
+
+function DeviceSelect({
+  value, onChange, devices,
+}: {
+  value: string
+  onChange: (v: string) => void
+  devices: MediaDeviceInfo[]
+}) {
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className="flex-1 min-w-0 rounded border bg-background px-1.5 py-1 text-[10px] text-foreground"
+    >
+      <option value="">System default</option>
+      {devices.map((d, i) => (
+        <option key={d.deviceId} value={d.deviceId}>
+          {d.label || `Output ${i + 1}`}
+        </option>
+      ))}
+    </select>
+  )
 }
 
 function PipelinePill({ children }: { children: React.ReactNode }) {
@@ -35,6 +65,10 @@ export function ControlPanel({
   textPrompt, onTextPromptChange,
   onStart, onStop,
   vcPipeline, meanvcSteps, onMeanvcStepsChange,
+  audioOutputs,
+  feedbackEnabled, onFeedbackEnabledChange,
+  feedbackDeviceId, onFeedbackDeviceChange,
+  pplxDeviceId, onPplxDeviceChange,
 }: Props) {
   const previewAudioRef = useRef<HTMLAudioElement | null>(null)
   const [previewPlaying, setPreviewPlaying] = useState(false)
@@ -168,6 +202,26 @@ export function ControlPanel({
                 )}
               </div>
             )}
+
+            <div className="space-y-1.5 border-t border-purple-500/20 pt-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <Headphones className="size-3 text-purple-400" />
+                  <span className="text-[11px] font-medium text-purple-200">Hear my converted voice</span>
+                </div>
+                <Switch checked={feedbackEnabled} onCheckedChange={onFeedbackEnabledChange} />
+              </div>
+              {feedbackEnabled && (
+                <label className="flex items-center gap-2">
+                  <span className="text-[10px] text-muted-foreground w-[72px] shrink-0">Feedback out</span>
+                  <DeviceSelect value={feedbackDeviceId} onChange={onFeedbackDeviceChange} devices={audioOutputs} />
+                </label>
+              )}
+              <label className="flex items-center gap-2">
+                <span className="text-[10px] text-muted-foreground w-[72px] shrink-0">PersonaPlex out</span>
+                <DeviceSelect value={pplxDeviceId} onChange={onPplxDeviceChange} devices={audioOutputs} />
+              </label>
+            </div>
           </>
         )}
       </div>
