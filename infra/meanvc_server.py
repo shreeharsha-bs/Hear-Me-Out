@@ -437,6 +437,10 @@ async def handle_stream(request: web.Request) -> web.WebSocketResponse:
                     vc_wav = session.inference_one_chunk(chunk)
                     continue  # skip first chunk output (warmup padding)
 
+                # Periodically realign streaming offsets (matches run_rt.py).
+                if chunk_count % 50 == 0:
+                    session.reset_cache()
+
                 try:
                     vc_wav = session.inference_one_chunk(chunk)
                     await ws.send_bytes(vc_wav.tobytes())
@@ -578,6 +582,12 @@ async def handle_chat_proxy(request: web.Request) -> web.WebSocketResponse:
                             None, session.inference_one_chunk, chunk
                         )
                         continue
+
+                    # Periodically realign the streaming offsets (matches the
+                    # reference run_rt.py). Without this, asr/vc offsets grow
+                    # unbounded and quality drifts over a long conversation.
+                    if chunk_count % 50 == 0:
+                        session.reset_cache()
 
                     try:
                         vc_wav = await loop.run_in_executor(

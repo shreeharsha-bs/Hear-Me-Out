@@ -17,7 +17,7 @@ export interface MeanVCPipelineState {
 // converts each chunk and relays it to PersonaPlex over localhost.
 export function useMeanVCPipeline(
   sendRawAudio: (data: ArrayBuffer) => void,
-  initialSteps: number = 8,
+  initialSteps: number = 2,
 ) {
   const [state, setState] = useState<MeanVCPipelineState>({
     vcEnabled: false,

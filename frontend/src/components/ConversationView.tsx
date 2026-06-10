@@ -18,7 +18,7 @@ interface Props {
 }
 
 export function ConversationView({ ws, recorder }: Props) {
-  const [meanvcSteps, setMeanvcSteps] = useState(8)
+  const [meanvcSteps, setMeanvcSteps] = useState(2)
   const vcPipeline = useMeanVCPipeline((data) => ws.sendRawAudio(data), meanvcSteps)
 
   // Audio output routing + live monitor of the converted voice (VC area only).
