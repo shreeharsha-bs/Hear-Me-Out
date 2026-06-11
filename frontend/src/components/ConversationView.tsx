@@ -6,6 +6,7 @@ import { useConversation } from "@/hooks/useConversation"
 import { ControlPanel } from "@/components/conversation/ControlPanel"
 import { MessageFeed } from "@/components/conversation/MessageFeed"
 import { DownloadBar } from "@/components/conversation/DownloadBar"
+import { VoiceMetricsModal } from "@/components/conversation/VoiceMetricsModal"
 import type { useWebSocket } from "@/hooks/useWebSocket"
 import type { useRecorder } from "@/hooks/useRecorder"
 
@@ -47,9 +48,11 @@ export function ConversationView({ ws, recorder }: Props) {
   const {
     textPrompt, setTextPrompt,
     diarized, userWavUrl, personaplexWavUrl, mergedWavUrl,
+    vcMetrics, vcMetricsLoading,
     startConversation, stopConversation, downloadTranscript,
   } = useConversation(ws, recorder, vcPipeline)
 
+  const [showVcMetrics, setShowVcMetrics] = useState(false)
   const [playing, setPlaying] = useState(false)
   const [playTime, setPlayTime] = useState(0)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -76,6 +79,9 @@ export function ConversationView({ ws, recorder }: Props) {
           onDownloadTranscript={downloadTranscript}
           onPlayTimeChange={setPlayTime}
           onPlayingChange={setPlaying}
+          vcMetricsLoading={vcMetricsLoading}
+          vcMetricsReady={!!vcMetrics}
+          onShowVcMetrics={() => setShowVcMetrics(true)}
         />
       )}
 
@@ -139,6 +145,10 @@ export function ConversationView({ ws, recorder }: Props) {
           </CardContent>
         </Card>
       </div>
+
+      {showVcMetrics && vcMetrics && (
+        <VoiceMetricsModal data={vcMetrics} onClose={() => setShowVcMetrics(false)} />
+      )}
     </div>
   )
 }

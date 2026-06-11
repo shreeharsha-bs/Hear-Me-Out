@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback } from "react";
 import { getMeanvcLoadTargetUrl } from "@/lib/config";
+import { createWavFile } from "@/lib/audio";
 import type { ProxyDescriptor } from "@/hooks/useWebSocket";
 
 export interface MeanVCPipelineState {
@@ -32,6 +33,8 @@ export function useMeanVCPipeline(
   const pcmContextRef = useRef<AudioContext | null>(null);
   const processorRef = useRef<ScriptProcessorNode | null>(null);
   const sendingRef = useRef(false);
+  // Raw (pre-conversion) mic PCM, kept for the post-conversation voice-change metrics.
+  const originalPcmRef = useRef<Float32Array[]>([]);
   const resumeRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const sendRawRef = useRef(sendRawAudio);
   sendRawRef.current = sendRawAudio;
@@ -84,10 +87,14 @@ export function useMeanVCPipeline(
     const processor = audioCtx.createScriptProcessor(2048, 1, 1);
     processorRef.current = processor;
     sendingRef.current = false;
+    originalPcmRef.current = [];
 
     processor.onaudioprocess = (e) => {
       if (!sendingRef.current) return;
-      sendRawRef.current(e.inputBuffer.getChannelData(0).buffer);
+      const ch = e.inputBuffer.getChannelData(0);
+      // Snapshot the raw mic (inputBuffer is reused, so copy) before sending.
+      originalPcmRef.current.push(new Float32Array(ch));
+      sendRawRef.current(ch.buffer);
     };
     source.connect(processor);
     // Near-silent sink keeps the ScriptProcessor firing.
@@ -110,6 +117,18 @@ export function useMeanVCPipeline(
       voicePrompt: "NATF2.pt",
     };
   }, [state.vcTargetId, initialSteps]);
+
+  // Assemble the captured raw mic into a 16 kHz WAV (the "Original" side of the
+  // voice-change comparison). Returns null if nothing was captured.
+  const getOriginalUserWav = useCallback((): Blob | null => {
+    const parts = originalPcmRef.current;
+    if (!parts.length) return null;
+    const total = parts.reduce((n, p) => n + p.length, 0);
+    const combined = new Float32Array(total);
+    let off = 0;
+    for (const p of parts) { combined.set(p, off); off += p.length; }
+    return createWavFile(combined, 16000);
+  }, []);
 
   // Phase 2: open the gate so mic PCM starts flowing to the proxy.
   const beginSending = useCallback(() => {
@@ -143,5 +162,6 @@ export function useMeanVCPipeline(
     startMic,
     beginSending,
     stopVCStream,
+    getOriginalUserWav,
   };
 }

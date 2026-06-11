@@ -1,6 +1,7 @@
 import { useState, useRef } from "react"
 import { Button } from "@/components/ui/button"
-import { Download, Play, Pause } from "lucide-react"
+import { Spinner } from "@/components/ui/spinner"
+import { Download, Play, Pause, BarChart3 } from "lucide-react"
 import { formatTime } from "@/lib/utils"
 
 interface Props {
@@ -10,11 +11,15 @@ interface Props {
   onDownloadTranscript: () => void
   onPlayTimeChange: (t: number) => void
   onPlayingChange: (p: boolean) => void
+  vcMetricsLoading?: boolean
+  vcMetricsReady?: boolean
+  onShowVcMetrics?: () => void
 }
 
 export function DownloadBar({
   userWavUrl, personaplexWavUrl, mergedWavUrl,
   onDownloadTranscript, onPlayTimeChange, onPlayingChange,
+  vcMetricsLoading, vcMetricsReady, onShowVcMetrics,
 }: Props) {
   const [playing, setPlaying] = useState(false)
   const [playTime, setPlayTime] = useState(0)
@@ -58,6 +63,16 @@ export function DownloadBar({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="text-sm font-medium">Conversation complete</span>
         <div className="flex flex-wrap items-center gap-2">
+          {vcMetricsLoading && (
+            <span className="inline-flex items-center gap-1.5 text-[10px] text-muted-foreground">
+              <Spinner className="size-3" /> Analyzing voice…
+            </span>
+          )}
+          {vcMetricsReady && !vcMetricsLoading && (
+            <Button variant="outline" size="xs" onClick={onShowVcMetrics} className="border-purple-500/50 text-purple-300 hover:bg-purple-500/10">
+              <BarChart3 /> Voice change metrics
+            </Button>
+          )}
           <Button variant="outline" size="xs" onClick={onDownloadTranscript}>
             <Download /> Transcript
           </Button>

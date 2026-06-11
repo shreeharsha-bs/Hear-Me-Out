@@ -60,10 +60,11 @@ export interface MetricsResult {
 
 // JSON variant — returns the raw metrics so the UI renders them as HTML/CSS
 // (radar chart + cards) instead of a server-rendered PNG.
-export async function compareMetricsData(sourceFile: File, targetFile: File): Promise<MetricsResult> {
+export async function compareMetricsData(source: Blob, target: Blob): Promise<MetricsResult> {
   const fd = new FormData()
-  fd.append("source_audio", sourceFile)
-  fd.append("target_audio", targetFile)
+  // Explicit .wav filenames so the backend's extension check passes for raw Blobs.
+  fd.append("source_audio", source, "source.wav")
+  fd.append("target_audio", target, "target.wav")
   const resp = await fetch(`${API_BASE}/api/metrics-comparison?output=json`, { method: "POST", body: fd })
   if (!resp.ok) throw new Error(await resp.text())
   return resp.json()

@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from "react"
 import { webmToWavBlob } from "@/lib/audio"
-import { transcribeRecording } from "@/services/api"
+import { transcribeRecording, compareMetricsData, type MetricsResult } from "@/services/api"
 import { mergeAudioTracks } from "@/services/audioMerge"
 import { formatTime } from "@/lib/utils"
 import type { useWebSocket } from "@/hooks/useWebSocket"
@@ -27,8 +27,11 @@ export function useConversation(ws: WsState, recorder: RecorderState, vcPipeline
   const [userWavUrl, setUserWavUrl] = useState<string | null>(null)
   const [personaplexWavUrl, setPersonaplexWavUrl] = useState<string | null>(null)
   const [mergedWavUrl, setMergedWavUrl] = useState<string | null>(null)
+  // Voice-change metrics (VC mode only): original mic vs converted voice.
+  const [vcMetrics, setVcMetrics] = useState<MetricsResult | null>(null)
+  const [vcMetricsLoading, setVcMetricsLoading] = useState(false)
 
-  const { vcEnabled, vcTargetId, vcStreaming, startMic, beginSending, stopVCStream: vcStop } = vcPipeline
+  const { vcEnabled, vcTargetId, vcStreaming, startMic, beginSending, stopVCStream: vcStop, getOriginalUserWav } = vcPipeline
   const { isRecording, start: startRecorder } = recorder
   const sendingBegun = useRef(false)
 
@@ -43,6 +46,8 @@ export function useConversation(ws: WsState, recorder: RecorderState, vcPipeline
     setUserWavUrl(null)
     setPersonaplexWavUrl(null)
     setMergedWavUrl(null)
+    setVcMetrics(null)
+    setVcMetricsLoading(false)
     if (vcEnabled && vcTargetId) {
       // VC mode: acquire mic first to learn the sample rate, then connect to the
       // chat-proxy (which speaks PersonaPlex's protocol on this same socket).
@@ -69,6 +74,17 @@ export function useConversation(ws: WsState, recorder: RecorderState, vcPipeline
         const vcWav = ws.getVcUserWav()
         if (!vcWav) return
         setUserWavUrl(URL.createObjectURL(vcWav))
+
+        // Voice-change metrics: original (raw mic) vs converted voice. Runs in
+        // the background; the download bar shows a spinner then a "show" button.
+        const originalWav = getOriginalUserWav()
+        if (originalWav) {
+          setVcMetricsLoading(true)
+          compareMetricsData(originalWav, vcWav)
+            .then(setVcMetrics)
+            .catch(() => setVcMetrics(null))
+            .finally(() => setVcMetricsLoading(false))
+        }
 
         let pplxWav: Blob | null = null
         try {
@@ -103,7 +119,7 @@ export function useConversation(ws: WsState, recorder: RecorderState, vcPipeline
         }
       })()
     }
-  }, [recorder, ws, vcStreaming, vcStop])
+  }, [recorder, ws, vcStreaming, vcStop, getOriginalUserWav])
 
   // VC mode: once the proxy relays PersonaPlex's handshake, open the gate so mic
   // PCM starts flowing. (Mic was already acquired in startConversation.)
@@ -194,6 +210,8 @@ export function useConversation(ws: WsState, recorder: RecorderState, vcPipeline
     userWavUrl,
     personaplexWavUrl,
     mergedWavUrl,
+    vcMetrics,
+    vcMetricsLoading,
     startConversation,
     stopConversation,
     downloadTranscript,
