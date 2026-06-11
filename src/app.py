@@ -254,7 +254,9 @@ def create_app():
 
     @app.post("/api/metrics-comparison")
     async def metrics_comparison(
-        source_audio: UploadFile = File(...), target_audio: UploadFile = File(...)
+        source_audio: UploadFile = File(...),
+        target_audio: UploadFile = File(...),
+        output: str = "image",
     ):
         if not source_audio.filename or not target_audio.filename:
             raise HTTPException(status_code=400, detail="Missing audio files")
@@ -297,6 +299,13 @@ def create_app():
                 )
 
             results = analyze_voices(source_path, target_path)
+
+            # JSON path: return the raw metrics dict so the frontend can render
+            # it with HTML/CSS (no server-side matplotlib). Temp files are already
+            # consumed by analyze_voices, so they can be cleaned up immediately.
+            if output == "json":
+                shutil.rmtree(temp_dir, ignore_errors=True)
+                return JSONResponse(results)
 
             if (
                 results["aesthetics"]["response_a"]

@@ -36,3 +36,35 @@ export async function compareMetrics(sourceFile: File, targetFile: File): Promis
   if (!resp.ok) throw new Error(await resp.text())
   return resp.blob()
 }
+
+export interface ResponseMetrics {
+  speech_rate: number | null
+  sentiment: string | null
+  mean_pitch: number | null
+  std_pitch: number | null
+}
+
+export interface AestheticMetrics {
+  production_quality: number | null
+  content_usefulness: number | null
+  content_enjoyment: number | null
+  production_complexity: number | null
+}
+
+export interface MetricsResult {
+  response_a: ResponseMetrics
+  response_b: ResponseMetrics
+  comparison: { semantic_similarity: number | null }
+  aesthetics: { response_a: AestheticMetrics; response_b: AestheticMetrics }
+}
+
+// JSON variant — returns the raw metrics so the UI renders them as HTML/CSS
+// (radar chart + cards) instead of a server-rendered PNG.
+export async function compareMetricsData(sourceFile: File, targetFile: File): Promise<MetricsResult> {
+  const fd = new FormData()
+  fd.append("source_audio", sourceFile)
+  fd.append("target_audio", targetFile)
+  const resp = await fetch(`${API_BASE}/api/metrics-comparison?output=json`, { method: "POST", body: fd })
+  if (!resp.ok) throw new Error(await resp.text())
+  return resp.json()
+}

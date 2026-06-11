@@ -4,8 +4,9 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Spinner } from "@/components/ui/spinner"
 import { FieldGroup, Field, FieldLabel } from "@/components/ui/field"
-import { compareMetrics } from "@/services/api"
-import { GitCompare, AlertCircle, Upload, Volume2 } from "lucide-react"
+import { compareMetrics, compareMetricsData, type MetricsResult } from "@/services/api"
+import { MetricsResultView } from "@/components/MetricsResultView"
+import { GitCompare, AlertCircle, Upload, Volume2, Download } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 function UploadZone({ file, setFile }: { file: File | null; setFile: (f: File | null) => void }) {
@@ -49,18 +50,36 @@ export function MetricsComparison() {
   const [sourceFile, setSourceFile] = useState<File | null>(null)
   const [targetFile, setTargetFile] = useState<File | null>(null)
   const [comparing, setComparing] = useState(false)
-  const [plotUrl, setPlotUrl] = useState<string | null>(null)
+  const [result, setResult] = useState<MetricsResult | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [downloading, setDownloading] = useState(false)
 
   const compare = useCallback(async () => {
     if (!sourceFile || !targetFile) return
     setComparing(true)
     setError(null)
     try {
-      setPlotUrl(URL.createObjectURL(await compareMetrics(sourceFile, targetFile)))
+      setResult(await compareMetricsData(sourceFile, targetFile))
     } catch (e: any) {
       setError(e.message || "Comparison failed")
     } finally { setComparing(false) }
+  }, [sourceFile, targetFile])
+
+  // Optional: download the server-rendered PNG of the same comparison.
+  const downloadPng = useCallback(async () => {
+    if (!sourceFile || !targetFile) return
+    setDownloading(true)
+    try {
+      const blob = await compareMetrics(sourceFile, targetFile)
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = "metrics_comparison.png"
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (e: any) {
+      setError(e.message || "PNG export failed")
+    } finally { setDownloading(false) }
   }, [sourceFile, targetFile])
 
   return (
@@ -107,9 +126,22 @@ export function MetricsComparison() {
         </div>
       )}
 
-      {plotUrl && (
-        <div className="overflow-hidden rounded-lg border">
-          <img src={plotUrl} alt="Metrics chart" className="w-full" />
+      {result && !comparing && (
+        <div className="flex flex-col gap-3">
+          <MetricsResultView data={result} />
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={downloadPng}
+            disabled={downloading}
+            className="self-end"
+          >
+            {downloading ? (
+              <><Spinner data-icon="inline-start" />Exporting…</>
+            ) : (
+              <><Download data-icon="inline-start" />Download PNG</>
+            )}
+          </Button>
         </div>
       )}
     </div>
