@@ -40,6 +40,7 @@ read_audio = None
 collect_chunks = None
 
 whisper_model = None
+whisper_model_cpu = None
 
 
 def _init_whisper():
@@ -52,6 +53,18 @@ def _init_whisper():
         model_size = os.environ.get("WHISPER_MODEL", "small")
         whisper_model = WhisperModel(model_size, device=device, compute_type=compute)
         logger.info(f"Whisper model '{model_size}' loaded on {device}")
+
+
+def _init_whisper_cpu():
+    """Lazy CPU Whisper, used as an OOM fallback when the shared GPU is full."""
+    global whisper_model_cpu
+    if whisper_model_cpu is None:
+        from faster_whisper import WhisperModel
+
+        model_size = os.environ.get("WHISPER_MODEL", "small")
+        whisper_model_cpu = WhisperModel(model_size, device="cpu", compute_type="int8")
+        logger.info(f"Whisper CPU fallback model '{model_size}' loaded")
+    return whisper_model_cpu
 
 
 def _init_vad():
@@ -103,20 +116,32 @@ def create_app():
             f.write(contents)
             temp_path = f.name
 
-        try:
-            segments_result, _ = whisper_model.transcribe(
-                temp_path, beam_size=1, language="en"
-            )
-            segments = []
-            for s in segments_result:
+        def _run(model):
+            segments_result, _ = model.transcribe(temp_path, beam_size=1, language="en")
+            segs = []
+            for s in segments_result:  # generation (and any OOM) happens here
                 if s.text.strip():
-                    segments.append(
+                    segs.append(
                         {
                             "start": round(s.start, 2),
                             "end": round(s.end, 2),
                             "text": s.text.strip(),
                         }
                     )
+            return segs
+
+        try:
+            try:
+                segments = _run(whisper_model)
+            except RuntimeError as e:
+                # Shared GPU can be exhausted by PersonaPlex + other jobs; fall
+                # back to a CPU model instead of 500-ing the whole transcript.
+                if "out of memory" in str(e).lower() and torch.cuda.is_available():
+                    logger.warning("Whisper CUDA OOM — clearing cache, retrying on CPU")
+                    torch.cuda.empty_cache()
+                    segments = _run(_init_whisper_cpu())
+                else:
+                    raise
             text = " ".join(s["text"] for s in segments)
             return JSONResponse({"text": text, "segments": segments})
         finally:

@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from "react"
 import { webmToWavBlob } from "@/lib/audio"
-import { transcribeRecording, compareMetricsData, type MetricsResult } from "@/services/api"
+import { transcribeRecording, transcribeWavBlob, compareMetricsData, type MetricsResult } from "@/services/api"
 import { mergeAudioTracks } from "@/services/audioMerge"
 import { formatTime } from "@/lib/utils"
 import type { useWebSocket } from "@/hooks/useWebSocket"
@@ -81,17 +81,8 @@ export function useConversation(ws: WsState, recorder: RecorderState, vcPipeline
         if (!vcWav) { setProcessing(false); return }
         setUserWavUrl(URL.createObjectURL(vcWav))
 
-        // Voice-change metrics: original (raw mic) vs converted voice. Runs in
-        // the background; the download bar shows a spinner then a "show" button.
         const originalWav = getOriginalUserWav()
-        if (originalWav) {
-          setOriginalUserWavUrl(URL.createObjectURL(originalWav))
-          setVcMetricsLoading(true)
-          compareMetricsData(originalWav, vcWav)
-            .then(setVcMetrics)
-            .catch(() => setVcMetrics(null))
-            .finally(() => setVcMetricsLoading(false))
-        }
+        if (originalWav) setOriginalUserWavUrl(URL.createObjectURL(originalWav))
 
         let pplxWav: Blob | null = null
         try {
@@ -107,22 +98,36 @@ export function useConversation(ws: WsState, recorder: RecorderState, vcPipeline
           setMergedWavUrl(URL.createObjectURL(vcWav))
         }
 
+        // Build PersonaPlex turns first so they survive even if the
+        // converted-voice transcription below fails (long clips, etc).
+        const convStart = ws.transcripts[0]?.timestamp ?? Date.now()
+        const pplxTurns: DiarizedTurn[] = ws.transcripts.map((t, i, arr) => {
+          const prevEnd = i > 0 ? (arr[i - 1].timestamp - convStart) / 1000 : 0
+          const start = Math.max(prevEnd, (t.timestamp - convStart) / 1000 - 2)
+          return { speaker: "personaplex" as const, text: t.text, start, end: start + 2 }
+        })
+        let vcTurns: DiarizedTurn[] = []
         try {
-          const result = await transcribeRecording([vcWav])
-          const vcTurns: DiarizedTurn[] = (result.segments || []).map(
+          const result = await transcribeWavBlob(vcWav)
+          vcTurns = (result.segments || []).map(
             (s: { start: number; end: number; text: string }) => ({
               speaker: "user" as const, text: s.text, start: s.start, end: s.end,
             })
           )
-          const convStart = ws.transcripts[0]?.timestamp ?? Date.now()
-          const pplxTurns: DiarizedTurn[] = ws.transcripts.map((t, i, arr) => {
-            const prevEnd = i > 0 ? (arr[i - 1].timestamp - convStart) / 1000 : 0
-            const start = Math.max(prevEnd, (t.timestamp - convStart) / 1000 - 2)
-            return { speaker: "personaplex" as const, text: t.text, start, end: start + 2 }
-          })
-          setDiarized([...vcTurns, ...pplxTurns].sort((a, b) => a.start - b.start))
-        } catch {
-          setDiarized([])
+        } catch (e) {
+          console.error("Converted-voice transcription failed:", e)
+        }
+        setDiarized([...vcTurns, ...pplxTurns].sort((a, b) => a.start - b.start))
+
+        // Voice-change metrics AFTER diarization finishes, so its GPU models
+        // never run concurrently with the transcription above (the shared GPU
+        // also holds PersonaPlex 7B — concurrency caused CUDA OOM).
+        if (originalWav) {
+          setVcMetricsLoading(true)
+          compareMetricsData(originalWav, vcWav)
+            .then(setVcMetrics)
+            .catch(() => setVcMetrics(null))
+            .finally(() => setVcMetricsLoading(false))
         }
       })()
     }

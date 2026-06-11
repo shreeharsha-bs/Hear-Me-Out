@@ -19,6 +19,18 @@ export async function transcribeRecording(
   return resp.json()
 }
 
+// Transcribe a WAV blob directly (no webm decode/re-encode round-trip).
+// Safer for long clips than transcribeRecording, which rebuilds the audio.
+export async function transcribeWavBlob(
+  wav: Blob
+): Promise<{ text: string; segments: { start: number; end: number; text: string }[] }> {
+  const formData = new FormData()
+  formData.append("audio", wav, "audio.wav")
+  const resp = await fetch(`${API_BASE}/api/transcribe`, { method: "POST", body: formData })
+  if (!resp.ok) throw new Error(`${resp.status}: ${await resp.text()}`)
+  return resp.json()
+}
+
 export async function convertVoice(sourceFile: File, targetFile: File): Promise<Blob> {
   const fd = new FormData()
   fd.append("source_audio", sourceFile)
