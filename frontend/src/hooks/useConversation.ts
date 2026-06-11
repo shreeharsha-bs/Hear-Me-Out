@@ -31,6 +31,8 @@ export function useConversation(ws: WsState, recorder: RecorderState, vcPipeline
   const [originalUserWavUrl, setOriginalUserWavUrl] = useState<string | null>(null)
   const [vcMetrics, setVcMetrics] = useState<MetricsResult | null>(null)
   const [vcMetricsLoading, setVcMetricsLoading] = useState(false)
+  // True between conversation end and the results being ready (drives the shimmer).
+  const [processing, setProcessing] = useState(false)
 
   const { vcEnabled, vcTargetId, vcStreaming, startMic, beginSending, stopVCStream: vcStop, getOriginalUserWav } = vcPipeline
   const { isRecording, start: startRecorder } = recorder
@@ -50,6 +52,7 @@ export function useConversation(ws: WsState, recorder: RecorderState, vcPipeline
     setOriginalUserWavUrl(null)
     setVcMetrics(null)
     setVcMetricsLoading(false)
+    setProcessing(false)
     if (vcEnabled && vcTargetId) {
       // VC mode: acquire mic first to learn the sample rate, then connect to the
       // chat-proxy (which speaks PersonaPlex's protocol on this same socket).
@@ -70,11 +73,12 @@ export function useConversation(ws: WsState, recorder: RecorderState, vcPipeline
     recorder.stop()
     ws.disconnect()
     micClicked.current = false
+    setProcessing(true)
 
     if (wasVC) {
       ;(async () => {
         const vcWav = ws.getVcUserWav()
-        if (!vcWav) return
+        if (!vcWav) { setProcessing(false); return }
         setUserWavUrl(URL.createObjectURL(vcWav))
 
         // Voice-change metrics: original (raw mic) vs converted voice. Runs in
@@ -194,6 +198,11 @@ export function useConversation(ws: WsState, recorder: RecorderState, vcPipeline
     })()
   }, [recorder.recordingAvailable])
 
+  // Results are ready once diarization lands → drop the shimmer.
+  useEffect(() => {
+    if (diarized !== null) setProcessing(false)
+  }, [diarized])
+
   const downloadTranscript = useCallback(() => {
     if (!diarized) return
     const lines = diarized.map(
@@ -216,6 +225,7 @@ export function useConversation(ws: WsState, recorder: RecorderState, vcPipeline
     originalUserWavUrl,
     vcMetrics,
     vcMetricsLoading,
+    processing,
     startConversation,
     stopConversation,
     downloadTranscript,

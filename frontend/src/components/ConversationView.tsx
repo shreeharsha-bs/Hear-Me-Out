@@ -6,6 +6,7 @@ import { useConversation } from "@/hooks/useConversation"
 import { ControlPanel } from "@/components/conversation/ControlPanel"
 import { MessageFeed } from "@/components/conversation/MessageFeed"
 import { DownloadBar } from "@/components/conversation/DownloadBar"
+import { DownloadBarSkeleton } from "@/components/conversation/DownloadBarSkeleton"
 import { VoiceMetricsModal } from "@/components/conversation/VoiceMetricsModal"
 import type { useWebSocket } from "@/hooks/useWebSocket"
 import type { useRecorder } from "@/hooks/useRecorder"
@@ -48,7 +49,7 @@ export function ConversationView({ ws, recorder }: Props) {
   const {
     textPrompt, setTextPrompt,
     diarized, userWavUrl, personaplexWavUrl, mergedWavUrl,
-    originalUserWavUrl, vcMetrics, vcMetricsLoading,
+    originalUserWavUrl, vcMetrics, vcMetricsLoading, processing,
     startConversation, stopConversation, downloadTranscript,
   } = useConversation(ws, recorder, vcPipeline)
 
@@ -71,6 +72,8 @@ export function ConversationView({ ws, recorder }: Props) {
 
   return (
     <div className="flex flex-col gap-4 md:grid md:grid-cols-[1fr_280px] md:gap-4 md:h-full pb-2">
+      {processing && !showResult && <DownloadBarSkeleton />}
+
       {showResult && (
         <DownloadBar
           userWavUrl={userWavUrl}

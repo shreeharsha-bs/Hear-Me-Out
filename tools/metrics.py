@@ -28,7 +28,10 @@ def get_transcript(audio_path):
     try:
         # Use a smaller model for faster processing, or a larger one for higher accuracy
         transcriber = pipeline("automatic-speech-recognition", model="openai/whisper-small", device='cuda' if torch.cuda.is_available() else 'cpu')
-        transcript = transcriber(audio_path)["text"]
+        # chunk_length_s enables Whisper's long-form algorithm; without it the
+        # pipeline only handles the first 30s and raises on longer clips
+        # (which previously got swallowed -> empty transcript -> 0 syl/s).
+        transcript = transcriber(audio_path, chunk_length_s=30, batch_size=8)["text"]
         return transcript
     except Exception as e:
         print(f"Error during transcription: {e}")

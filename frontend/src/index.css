@@ -52,3 +52,25 @@
   * { @apply border-border; }
   body { @apply bg-background text-foreground font-sans antialiased; }
 }
+
+/* Sliding shimmer for loading placeholders */
+@keyframes shimmer {
+  100% { transform: translateX(100%); }
+}
+.shimmer {
+  position: relative;
+  overflow: hidden;
+}
+.shimmer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    hsl(var(--foreground) / 0.08),
+    transparent
+  );
+  animation: shimmer 1.4s infinite;
+}
