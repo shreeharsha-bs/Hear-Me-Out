@@ -27,7 +27,7 @@ def get_transcript(audio_path):
     """
     try:
         # Use a smaller model for faster processing, or a larger one for higher accuracy
-        transcriber = pipeline("automatic-speech-recognition", model="openai/whisper-small", device='mps' if torch.cuda.is_available() else 'cpu')
+        transcriber = pipeline("automatic-speech-recognition", model="openai/whisper-small", device='cuda' if torch.cuda.is_available() else 'cpu')
         transcript = transcriber(audio_path)["text"]
         return transcript
     except Exception as e:
@@ -81,7 +81,7 @@ def analyze_sentiment(transcript):
     """
     try:
         print(transcript)
-        sentiment_pipeline = pipeline("sentiment-analysis", model="distilbert/distilbert-base-uncased-finetuned-sst-2-english", device='mps' if torch.cuda.is_available() else 'cpu')
+        sentiment_pipeline = pipeline("sentiment-analysis", model="distilbert/distilbert-base-uncased-finetuned-sst-2-english", device='cuda' if torch.cuda.is_available() else 'cpu')
         result = sentiment_pipeline(transcript)
         return result[0]['label']
     except Exception as e:
@@ -94,7 +94,7 @@ def calculate_semantic_similarity(transcript_a, transcript_b):
     Calculates the semantic similarity between two transcripts.
     """
     try:
-        model = SentenceTransformer('all-MiniLM-L6-v2', device='mps' if torch.cuda.is_available() else 'cpu')
+        model = SentenceTransformer('all-MiniLM-L6-v2', device='cuda' if torch.cuda.is_available() else 'cpu')
         
         # Compute embedding for both transcripts
         embedding_1 = model.encode(transcript_a, convert_to_tensor=True)
