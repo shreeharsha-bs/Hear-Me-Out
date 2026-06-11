@@ -28,6 +28,7 @@ export function useConversation(ws: WsState, recorder: RecorderState, vcPipeline
   const [personaplexWavUrl, setPersonaplexWavUrl] = useState<string | null>(null)
   const [mergedWavUrl, setMergedWavUrl] = useState<string | null>(null)
   // Voice-change metrics (VC mode only): original mic vs converted voice.
+  const [originalUserWavUrl, setOriginalUserWavUrl] = useState<string | null>(null)
   const [vcMetrics, setVcMetrics] = useState<MetricsResult | null>(null)
   const [vcMetricsLoading, setVcMetricsLoading] = useState(false)
 
@@ -46,6 +47,7 @@ export function useConversation(ws: WsState, recorder: RecorderState, vcPipeline
     setUserWavUrl(null)
     setPersonaplexWavUrl(null)
     setMergedWavUrl(null)
+    setOriginalUserWavUrl(null)
     setVcMetrics(null)
     setVcMetricsLoading(false)
     if (vcEnabled && vcTargetId) {
@@ -79,6 +81,7 @@ export function useConversation(ws: WsState, recorder: RecorderState, vcPipeline
         // the background; the download bar shows a spinner then a "show" button.
         const originalWav = getOriginalUserWav()
         if (originalWav) {
+          setOriginalUserWavUrl(URL.createObjectURL(originalWav))
           setVcMetricsLoading(true)
           compareMetricsData(originalWav, vcWav)
             .then(setVcMetrics)
@@ -210,6 +213,7 @@ export function useConversation(ws: WsState, recorder: RecorderState, vcPipeline
     userWavUrl,
     personaplexWavUrl,
     mergedWavUrl,
+    originalUserWavUrl,
     vcMetrics,
     vcMetricsLoading,
     startConversation,

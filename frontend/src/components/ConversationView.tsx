@@ -48,7 +48,7 @@ export function ConversationView({ ws, recorder }: Props) {
   const {
     textPrompt, setTextPrompt,
     diarized, userWavUrl, personaplexWavUrl, mergedWavUrl,
-    vcMetrics, vcMetricsLoading,
+    originalUserWavUrl, vcMetrics, vcMetricsLoading,
     startConversation, stopConversation, downloadTranscript,
   } = useConversation(ws, recorder, vcPipeline)
 
@@ -76,6 +76,7 @@ export function ConversationView({ ws, recorder }: Props) {
           userWavUrl={userWavUrl}
           personaplexWavUrl={personaplexWavUrl}
           mergedWavUrl={mergedWavUrl}
+          originalUserWavUrl={originalUserWavUrl}
           onDownloadTranscript={downloadTranscript}
           onPlayTimeChange={setPlayTime}
           onPlayingChange={setPlaying}

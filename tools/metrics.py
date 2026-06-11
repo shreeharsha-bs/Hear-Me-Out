@@ -116,12 +116,21 @@ def analyze_voices(audio_path_a, audio_path_b):
     transcript_a = get_transcript(audio_path_a)
     transcript_b = get_transcript(audio_path_b)
 
+    def _safe_duration(path):
+        try:
+            return float(librosa.get_duration(path=path))
+        except Exception as e:
+            print(f"Error getting duration: {e}")
+            return None
+
     # Calculate metrics for Response A
     metrics_a = {
         "speech_rate": calculate_speech_rate(audio_path_a, transcript_a),
         "sentiment": analyze_sentiment(transcript_a),
         "mean_pitch": calculate_pitch_stats(audio_path_a)[0],
         "std_pitch": calculate_pitch_stats(audio_path_a)[1],
+        "transcript": transcript_a,
+        "duration": _safe_duration(audio_path_a),
     }
 
     # Calculate metrics for Response B
@@ -130,6 +139,8 @@ def analyze_voices(audio_path_a, audio_path_b):
         "sentiment": analyze_sentiment(transcript_b),
         "mean_pitch": calculate_pitch_stats(audio_path_b)[0],
         "std_pitch": calculate_pitch_stats(audio_path_b)[1],
+        "transcript": transcript_b,
+        "duration": _safe_duration(audio_path_b),
     }
 
     # Calculate comparison metrics

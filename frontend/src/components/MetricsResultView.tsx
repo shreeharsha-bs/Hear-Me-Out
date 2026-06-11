@@ -4,7 +4,7 @@ import {
 } from "recharts"
 import { Badge } from "@/components/ui/badge"
 import type { MetricsResult, ResponseMetrics } from "@/services/api"
-import { Gauge, Smile, Activity, Waves } from "lucide-react"
+import { Gauge, Smile, Activity, Waves, Clock } from "lucide-react"
 
 const COLOR_A = "#22C55E" // Original speaker
 const COLOR_B = "#EF4444" // Voice-converted speaker
@@ -39,7 +39,18 @@ function ResponseCard({ title, color, m }: { title: string; color: string; m: Re
         <MetricRow icon={<Smile className="size-3.5" />} label="Sentiment" value={m.sentiment ?? "N/A"} />
         <MetricRow icon={<Activity className="size-3.5" />} label="Mean Pitch" value={num(m.mean_pitch, 0, " Hz")} />
         <MetricRow icon={<Waves className="size-3.5" />} label="Pitch Std Dev" value={num(m.std_pitch, 0, " Hz")} />
+        {m.duration != null && (
+          <MetricRow icon={<Clock className="size-3.5" />} label="Duration" value={num(m.duration, 1, " s")} />
+        )}
       </div>
+      {m.transcript !== undefined && (
+        <div className="mt-2 rounded border border-border/60 bg-background/50 p-2">
+          <span className="text-[9px] font-medium uppercase tracking-wide text-muted-foreground">Transcript</span>
+          <p className="mt-0.5 text-[11px] leading-snug text-foreground/80">
+            {m.transcript && m.transcript.trim() ? m.transcript : <em className="text-muted-foreground">(empty — nothing recognized)</em>}
+          </p>
+        </div>
+      )}
     </div>
   )
 }

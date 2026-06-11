@@ -8,6 +8,7 @@ interface Props {
   userWavUrl: string | null
   personaplexWavUrl: string | null
   mergedWavUrl: string | null
+  originalUserWavUrl?: string | null
   onDownloadTranscript: () => void
   onPlayTimeChange: (t: number) => void
   onPlayingChange: (p: boolean) => void
@@ -17,7 +18,7 @@ interface Props {
 }
 
 export function DownloadBar({
-  userWavUrl, personaplexWavUrl, mergedWavUrl,
+  userWavUrl, personaplexWavUrl, mergedWavUrl, originalUserWavUrl,
   onDownloadTranscript, onPlayTimeChange, onPlayingChange,
   vcMetricsLoading, vcMetricsReady, onShowVcMetrics,
 }: Props) {
@@ -76,6 +77,12 @@ export function DownloadBar({
           <Button variant="outline" size="xs" onClick={onDownloadTranscript}>
             <Download /> Transcript
           </Button>
+          {originalUserWavUrl && (
+            <a href={originalUserWavUrl} download="you-original.wav"
+              className="inline-flex items-center gap-1 h-6 rounded-lg border px-2 text-[10px] font-medium hover:bg-muted">
+              You (raw)
+            </a>
+          )}
           {userWavUrl && (
             <a href={userWavUrl} download="user-recording.wav"
               className="inline-flex items-center gap-1 h-6 rounded-lg border px-2 text-[10px] font-medium hover:bg-muted">

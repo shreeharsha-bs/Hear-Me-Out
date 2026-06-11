@@ -42,6 +42,8 @@ export interface ResponseMetrics {
   sentiment: string | null
   mean_pitch: number | null
   std_pitch: number | null
+  transcript?: string | null
+  duration?: number | null
 }
 
 export interface AestheticMetrics {
