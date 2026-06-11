@@ -55,13 +55,13 @@ function App() {
         <TabsContent value="conversation" className="flex-1 min-h-0">
           <ConversationView ws={ws} recorder={recorder} />
         </TabsContent>
-        <TabsContent value="voice-conversion">
-          <div className="mx-auto max-w-lg">
+        <TabsContent value="voice-conversion" className="flex-1 min-h-0 overflow-y-auto">
+          <div className="mx-auto max-w-lg pb-6">
             <VoiceConversion />
           </div>
         </TabsContent>
-        <TabsContent value="metrics">
-          <div className="mx-auto max-w-lg">
+        <TabsContent value="metrics" className="flex-1 min-h-0 overflow-y-auto">
+          <div className="mx-auto max-w-lg pb-6">
             <MetricsComparison />
           </div>
         </TabsContent>
