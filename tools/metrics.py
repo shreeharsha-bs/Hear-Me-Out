@@ -101,7 +101,7 @@ def calculate_semantic_similarity(transcript_a, transcript_b):
         embedding_2 = model.encode(transcript_b, convert_to_tensor=True)
         
         # Compute cosine-similarity
-        cosine_scores = np.abs(util.cos_sim(embedding_1, embedding_2))
+        cosine_scores = torch.abs(util.cos_sim(embedding_1, embedding_2))
         return cosine_scores.item()
     except Exception as e:
         print(f"Error calculating semantic similarity: {e}")
