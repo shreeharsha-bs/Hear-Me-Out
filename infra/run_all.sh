@@ -3,11 +3,13 @@
 # Works in both Docker containers and JupyterLab
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" 2>/dev/null && pwd)"
+# Workspace root — override to run from any folder, e.g. WORKSPACE=/workspace2
+WORKSPACE="${WORKSPACE:-/workspace}"
 VENV_DIR=""
 
 # Find venv
-if [ -d /workspace/hearmeout-venv/bin ]; then
-    VENV_DIR=/workspace/hearmeout-venv
+if [ -d "$WORKSPACE/hearmeout-venv/bin" ]; then
+    VENV_DIR="$WORKSPACE/hearmeout-venv"
 elif [ -d "$HOME/hearmeout-venv/bin" ]; then
     VENV_DIR="$HOME/hearmeout-venv"
 else
@@ -24,17 +26,17 @@ python3 -c "from packaging.version import parse; from importlib.metadata import 
 
 # Generate SSL certs if missing
 SSL_DIR=""
-for d in /workspace/ssl "$SCRIPT_DIR/ssl" "$HOME/ssl"; do
+for d in "$WORKSPACE/ssl" "$SCRIPT_DIR/ssl" "$HOME/ssl"; do
     if [ -f "$d/cert.pem" ] && [ -f "$d/key.pem" ]; then
         SSL_DIR="$d"
         break
     fi
 done
 if [ -z "$SSL_DIR" ]; then
-    mkdir -p /workspace/ssl
-    openssl req -x509 -newkey rsa:2048 -keyout /workspace/ssl/key.pem -out /workspace/ssl/cert.pem \
+    mkdir -p "$WORKSPACE/ssl"
+    openssl req -x509 -newkey rsa:2048 -keyout "$WORKSPACE/ssl/key.pem" -out "$WORKSPACE/ssl/cert.pem" \
         -days 365 -nodes -subj "/CN=*" -addext "subjectAltName=IP:0.0.0.0" 2>/dev/null
-    SSL_DIR=/workspace/ssl
+    SSL_DIR="$WORKSPACE/ssl"
     echo "Generated SSL certs in $SSL_DIR"
 fi
 
@@ -48,8 +50,8 @@ pkill -f "meanvc_server" 2>/dev/null || true
 sleep 2
 
 # Find Hear-Me-Out directory
-if [ -d /workspace/Hear-Me-Out ]; then
-    HEARMEOUT_DIR=/workspace/Hear-Me-Out
+if [ -d "$WORKSPACE/Hear-Me-Out" ]; then
+    HEARMEOUT_DIR="$WORKSPACE/Hear-Me-Out"
 elif [ -d "$HOME/Hear-Me-Out" ]; then
     HEARMEOUT_DIR="$HOME/Hear-Me-Out"
 else
@@ -90,9 +92,9 @@ echo "  Frontend: $FRONTEND_PATH"
 export FRONTEND_PATH
 
 echo "=== Starting PersonaPlex (GPU) on port 8000 (SSL) ==="
-# Find personaPlex entrypoint (may be at /workspace/ or in Home)
+# Find personaPlex entrypoint (may be at $WORKSPACE/ or in Home)
 PERSONAPLEX_ENTRY=""
-for p in /workspace/personaplex_entry.py "$HOME/personaplex_entry.py" \
+for p in "$WORKSPACE/personaplex_entry.py" "$HOME/personaplex_entry.py" \
          "$SCRIPT_DIR/personaplex_entrypoint.py" "$SCRIPT_DIR/personaplex_entry.py"; do
     if [ -f "$p" ]; then PERSONAPLEX_ENTRY="$p"; break; fi
 done
@@ -104,19 +106,19 @@ PID1=$!
 
 cd "$HEARMEOUT_DIR"
 
-echo "=== Starting vc-api (seed-vc, GPU) on port 5001 (SSL) ==="
+echo "=== Starting app-api (FastAPI: frontend + REST + offline seed-vc, GPU) on port 5001 (SSL) ==="
 WHISPER_MODEL="${WHISPER_MODEL:-small}"
 python3 -m uvicorn src.app:create_app --factory --host 0.0.0.0 --port 5001 \
     --ssl-keyfile "$SSL_DIR/key.pem" --ssl-certfile "$SSL_DIR/cert.pem" &
 PID2=$!
 
-echo "=== Starting MeanVC (CPU) on port 5002 (SSL) ==="
+echo "=== Starting MeanVC (streaming VC, CPU) on port 5002 (SSL) ==="
 export SSL_DIR
-export MEANVC_CKPT_DIR=/workspace/models/meanvc
-export MEANVC_SV_CKPT=/workspace/models/meanvc-sv/wavlm_large_finetune.pth
-export SPEAKER_VERIFICATION_ROOT=/workspace
+export MEANVC_CKPT_DIR="$WORKSPACE/models/meanvc"
+export MEANVC_SV_CKPT="$WORKSPACE/models/meanvc-sv/wavlm_large_finetune.pth"
+export SPEAKER_VERIFICATION_ROOT="$WORKSPACE"
 python3 infra/meanvc_server.py &
 PID3=$!
 
-echo "All services: PersonaPlex PID=$PID1, vc-api PID=$PID2, MeanVC PID=$PID3"
+echo "All services: PersonaPlex PID=$PID1, app-api PID=$PID2, MeanVC PID=$PID3"
 wait

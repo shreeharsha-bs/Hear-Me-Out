@@ -98,27 +98,43 @@ pip install --no-cache-dir -e "$PERSONAPLEX_DIR/moshi"
 # ============================================================================
 # Phase 5: Python dependencies
 # ============================================================================
-log "Phase 5/7: Installing all Python dependencies..."
+log "Phase 5/7: Installing Python dependencies..."
 
-pip install --no-cache-dir \
-    numpy==1.26.4 scipy==1.13.1 einops==0.7.0 \
-    safetensors>=0.4.0 sentencepiece==0.2.0 \
-    sounddevice==0.5.0 soundfile==0.12.1 "sphn>=0.1.4" \
-    "huggingface-hub>=0.34" "hf-transfer>=0.1.8" \
-    transformers sentence-transformers==3.3.1 accelerate \
-    librosa==0.10.2 pydub==0.25.1 munch==4.0.0 \
-    descript-audio-codec==1.0.0 bigvgan silero-vad \
-    fastapi==0.115.5 "uvicorn[standard]==0.32.0" \
-    python-multipart==0.0.18 starlette websockets \
-    "aiohttp>=3.10" omegaconf matplotlib pyphen werkzeug gdown \
-    2>&1 | tail -3
+FROZEN="$REPO_DIR/infra/requirements-frozen.txt"
+if [ -f "$FROZEN" ]; then
+    # Exact, reproducible install. torch is already present from Phase 3 (cu121
+    # index), so its pinned line in the lockfile is simply satisfied. The lockfile
+    # is the source of truth and already includes seed-vc + metrics deps.
+    log "Found lockfile — installing pinned deps from infra/requirements-frozen.txt..."
+    pip install --no-cache-dir -r "$FROZEN" 2>&1 | tail -3
+else
+    log "No lockfile — installing curated dependency set..."
+    # NOTE on safetensors: audiobox_aesthetics requires >=0.5.3, while the moshi fork
+    # *declares* <0.5. That conflict is cosmetic — moshi's safetensors load API/format is
+    # stable across 0.4–0.8 and the venv already runs huggingface-hub/transformers far past
+    # moshi's declared pins. We install >=0.5.3 so the Metrics tab's real aesthetics work.
+    # pyphen + audiobox_aesthetics power tools/metrics.py (Metrics tab + voice-change modal).
+    pip install --no-cache-dir \
+        numpy==1.26.4 scipy==1.13.1 einops==0.7.0 \
+        "safetensors>=0.5.3" sentencepiece==0.2.0 \
+        sounddevice==0.5.0 soundfile==0.12.1 "sphn>=0.1.4" \
+        "huggingface-hub>=0.34" "hf-transfer>=0.1.8" \
+        transformers sentence-transformers==3.3.1 accelerate \
+        librosa==0.10.2 pydub==0.25.1 munch==4.0.0 \
+        descript-audio-codec==1.0.0 bigvgan silero-vad \
+        fastapi==0.115.5 "uvicorn[standard]==0.32.0" \
+        python-multipart==0.0.18 starlette websockets \
+        "aiohttp>=3.10" omegaconf matplotlib pyphen audiobox_aesthetics werkzeug gdown \
+        2>&1 | tail -3
 
-log "Installing seed-vc dependencies..."
-pip install --no-cache-dir -r "$REPO_DIR/seed-vc/requirements.txt" 2>&1 | tail -3 || true
+    log "Installing seed-vc dependencies..."
+    pip install --no-cache-dir -r "$REPO_DIR/seed-vc/requirements.txt" 2>&1 | tail -3 || true
 
-# Freeze for reproducibility
-pip freeze > "$REPO_DIR/infra/requirements-frozen.txt"
-log "Frozen requirements saved to infra/requirements-frozen.txt"
+    # Freeze the resolved set so the next setup is exactly reproducible.
+    # Commit this file to git to lock versions.
+    pip freeze > "$FROZEN"
+    log "Frozen requirements saved to infra/requirements-frozen.txt (commit it to lock versions)"
+fi
 
 fi  # end of non-models-only block
 
@@ -204,5 +220,5 @@ echo "  Models:      $MODELS_DIR"
 echo ""
 echo "  Start:  cd $WORKSPACE && bash run_all.sh"
 echo ""
-echo "  PersonaPlex :8000   vc-api :5001   MeanVC :5002"
+echo "  PersonaPlex :8000   app-api :5001   MeanVC :5002"
 echo ""
