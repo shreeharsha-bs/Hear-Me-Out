@@ -1,39 +1,119 @@
 #!/bin/bash
 # ============================================================================
-# Hear-Me-Out: One-click setup for fresh Ubuntu 22.04 GPU server
-# Creates /workspace/ with all services (PersonaPlex, VC-API, MeanVC)
+# Hear-Me-Out: setup for a fresh Ubuntu 22.04 GPU server
+# Stands up all services (PersonaPlex, app-api, MeanVC) under a workspace folder.
 #
-# Usage:  export HF_TOKEN=hf_yourtoken   # needed for PersonaPlex model
-#         bash infra/setup.sh
+# Interactive:  bash infra/setup.sh            # prompts for workspace, repo, HF token, etc.
+# Non-interactive / CI / curl | bash:
+#               HF_TOKEN=hf_xxx WORKSPACE=/workspace bash infra/setup.sh -y
+# Models-only (existing setup): bash infra/setup.sh --models-only
 #
-# To only download models on existing setup:
-#         bash infra/setup.sh --models-only
+# All prompts have defaults (env vars override them); no TTY => uses defaults.
 # ============================================================================
 set -e
 
-RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
+RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'
+BOLD='\033[1m'; DIM='\033[2m'; NC='\033[0m'
 log()  { echo -e "${GREEN}[setup]${NC} $1"; }
 warn() { echo -e "${YELLOW}[warn]${NC}  $1"; }
 err()  { echo -e "${RED}[error]${NC} $1"; exit 1; }
+hr()   { echo -e "${DIM}────────────────────────────────────────────────────${NC}"; }
 
-# --- Configurable paths ---
-WORKSPACE="${WORKSPACE:-/workspace}"
+# ---------------------------------------------------------------------------
+# Args + interactive config
+#   Flags: --models-only   (skip system/venv/repo/deps, just download models)
+#          -y | --yes      (non-interactive: accept all defaults / env vars)
+#   Any value can be preset via env (WORKSPACE=, REPO_URL=, HF_TOKEN=) and is
+#   shown as the default. With no TTY (e.g. curl | bash) prompts are skipped.
+# ---------------------------------------------------------------------------
+MODELS_ONLY=false
+NONINTERACTIVE="${NONINTERACTIVE:-0}"
+INSTALL_SYSTEM=true
+for a in "$@"; do
+  case "$a" in
+    --models-only)            MODELS_ONLY=true ;;
+    -y|--yes|--non-interactive) NONINTERACTIVE=1 ;;
+    -h|--help) echo "Usage: setup.sh [--models-only] [-y|--yes]"; exit 0 ;;
+    *) warn "Unknown arg: $a" ;;
+  esac
+done
+[ -t 0 ] || NONINTERACTIVE=1   # no TTY -> non-interactive
+
+# ask VAR "Prompt" "default"  — text input with shown default
+ask() {
+  local __var="$1" __prompt="$2" __cur __reply; __cur="${!__var:-$3}"
+  if [ "$NONINTERACTIVE" = "1" ]; then printf -v "$__var" '%s' "$__cur"; return; fi
+  read -r -p "$(printf "${CYAN}?${NC} ${BOLD}%s${NC} ${DIM}[%s]${NC} " "$__prompt" "$__cur")" __reply
+  printf -v "$__var" '%s' "${__reply:-$__cur}"
+}
+# ask_secret VAR "Prompt"  — hidden input, keeps existing if blank
+ask_secret() {
+  local __var="$1" __prompt="$2" __cur __reply; __cur="${!__var:-}"
+  if [ "$NONINTERACTIVE" = "1" ]; then printf -v "$__var" '%s' "$__cur"; return; fi
+  local __hint="(blank to skip)"; [ -n "$__cur" ] && __hint="(enter to keep existing)"
+  read -r -s -p "$(printf "${CYAN}?${NC} ${BOLD}%s${NC} ${DIM}%s${NC} " "$__prompt" "$__hint")" __reply; echo
+  printf -v "$__var" '%s' "${__reply:-$__cur}"
+}
+# ask_yn VAR "Prompt" "Y|N"  — yes/no, sets VAR to true/false
+ask_yn() {
+  local __var="$1" __prompt="$2" __def="$3" __reply __hint
+  [ "${__def^^}" = "Y" ] && __hint="Y/n" || __hint="y/N"
+  if [ "$NONINTERACTIVE" = "1" ]; then
+    [ "${__def^^}" = "Y" ] && printf -v "$__var" 'true' || printf -v "$__var" 'false'; return
+  fi
+  read -r -p "$(printf "${CYAN}?${NC} ${BOLD}%s${NC} ${DIM}[%s]${NC} " "$__prompt" "$__hint")" __reply
+  case "${__reply:-$__def}" in [Yy]*) printf -v "$__var" 'true' ;; *) printf -v "$__var" 'false' ;; esac
+}
+
+echo
+echo -e "${BOLD}╭──────────────────────────────────────────────╮${NC}"
+echo -e "${BOLD}│        Hear-Me-Out — backend setup           │${NC}"
+echo -e "${BOLD}╰──────────────────────────────────────────────╯${NC}"
+[ "$NONINTERACTIVE" = "1" ] && log "Non-interactive: using defaults / env values." || echo -e "${DIM}Press Enter to accept the [default].${NC}"
+echo
+
+# Defaults (overridable via env), then prompt for each.
+# Workspace defaults to the current directory — cd into your target folder first.
+WORKSPACE="${WORKSPACE:-$(pwd)}"
+REPO_URL="${REPO_URL:-https://github.com/syedfahimabrar/Hear-Me-Out.git}"
+
+ask        WORKSPACE "Workspace directory" "$WORKSPACE"
+ask        REPO_URL  "Git repo URL"        "$REPO_URL"
+ask_secret HF_TOKEN  "Hugging Face token (gated PersonaPlex model)"
+if ! $MODELS_ONLY; then
+  ask_yn   MODELS_ONLY    "Models-only? (skip system/venv/repo/deps)"  "N"
+fi
+if ! $MODELS_ONLY; then
+  ask_yn   INSTALL_SYSTEM "Install system apt packages? (needs sudo)"  "Y"
+fi
+
+# Fixed upstreams (not prompted)
+PERSONAPLEX_URL="https://github.com/NVIDIA/personaplex.git"
+MEANVC_URL="https://github.com/ASLP-lab/MeanVC.git"
+PERSONAPLEX_COMMIT="3428dfd95309a7f3c84fd93259ded0f810d1ff91"
+
+# Derived paths (after WORKSPACE is finalized)
 REPO_DIR="$WORKSPACE/Hear-Me-Out"
 VENV_DIR="$WORKSPACE/hearmeout-venv"
 MODELS_DIR="$WORKSPACE/models"
 PERSONAPLEX_DIR="$WORKSPACE/personaplex"
 MEANVC_DIR="$WORKSPACE/MeanVC"
 
-REPO_URL="${REPO_URL:-https://github.com/syedfahimabrar/Hear-Me-Out.git}"
-PERSONAPLEX_URL="https://github.com/NVIDIA/personaplex.git"
-MEANVC_URL="https://github.com/ASLP-lab/MeanVC.git"
-PERSONAPLEX_COMMIT="3428dfd95309a7f3c84fd93259ded0f810d1ff91"
-
-MODELS_ONLY=false
-[ "$1" = "--models-only" ] && MODELS_ONLY=true
+echo; hr
+echo -e "  ${BOLD}Workspace${NC}    : $WORKSPACE"
+echo -e "  ${BOLD}Repo${NC}         : $REPO_URL"
+echo -e "  ${BOLD}HF token${NC}     : $([ -n "$HF_TOKEN" ] && echo set || echo "${YELLOW}not set — PersonaPlex model will be skipped${NC}")"
+echo -e "  ${BOLD}Models-only${NC}  : $MODELS_ONLY"
+$MODELS_ONLY || echo -e "  ${BOLD}System pkgs${NC}  : $INSTALL_SYSTEM"
+hr
+if [ "$NONINTERACTIVE" != "1" ]; then
+  read -r -p "$(printf "${CYAN}?${NC} ${BOLD}Proceed?${NC} ${DIM}[Y/n]${NC} ")" __go
+  case "${__go:-Y}" in [Yy]*) ;; *) err "Aborted by user." ;; esac
+fi
+echo
 
 if $MODELS_ONLY; then
-    log "--models-only mode: skipping system/venv/repo setup"
+    log "Models-only mode: skipping system/venv/repo setup"
     source "$VENV_DIR/bin/activate" 2>/dev/null || err "venv not found at $VENV_DIR"
     cd "$REPO_DIR"
 else
@@ -41,15 +121,18 @@ else
 # ============================================================================
 # Phase 1: System packages
 # ============================================================================
-log "Phase 1/7: Installing system packages..."
-
-export DEBIAN_FRONTEND=noninteractive
-sudo apt-get update -qq
-sudo apt-get install -y -qq --no-install-recommends \
-    build-essential pkg-config git wget curl ca-certificates \
-    python3 python3-dev python3-pip python3-venv \
-    ffmpeg libsndfile1 libopus-dev libsoxr-dev openssl nodejs npm \
-    2>&1 | tail -3
+if $INSTALL_SYSTEM; then
+    log "Phase 1/7: Installing system packages..."
+    export DEBIAN_FRONTEND=noninteractive
+    sudo apt-get update -qq
+    sudo apt-get install -y -qq --no-install-recommends \
+        build-essential pkg-config git wget curl ca-certificates \
+        python3 python3-dev python3-pip python3-venv \
+        ffmpeg libsndfile1 libopus-dev libsoxr-dev openssl nodejs npm \
+        2>&1 | tail -3
+else
+    log "Phase 1/7: Skipping system packages (assuming they're already present)."
+fi
 
 if command -v nvidia-smi &>/dev/null; then
     log "GPU: $(nvidia-smi --query-gpu=name --format=csv,noheader | head -1)"
@@ -61,8 +144,13 @@ fi
 # Phase 2: Create workspace
 # ============================================================================
 log "Phase 2/7: Creating workspace at $WORKSPACE..."
-sudo mkdir -p "$WORKSPACE"
-sudo chown -R "$(whoami)" "$WORKSPACE"
+if mkdir -p "$WORKSPACE" 2>/dev/null; then
+    :  # already writable (e.g. you created it)
+elif $INSTALL_SYSTEM; then
+    sudo mkdir -p "$WORKSPACE" && sudo chown -R "$(whoami)" "$WORKSPACE"
+else
+    err "Cannot create $WORKSPACE without sudo. Create it writable first, or enable system install."
+fi
 mkdir -p "$MODELS_DIR"/{seed-vc,meanvc,meanvc-sv}
 
 # ============================================================================

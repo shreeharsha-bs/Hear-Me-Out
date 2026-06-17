@@ -3,8 +3,10 @@
 # Works in both Docker containers and JupyterLab
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" 2>/dev/null && pwd)"
-# Workspace root — override to run from any folder, e.g. WORKSPACE=/workspace2
-WORKSPACE="${WORKSPACE:-/workspace}"
+# Workspace root. Defaults to the repo's parent dir (this script lives at
+# <workspace>/Hear-Me-Out/infra/run_all.sh), so it matches whatever setup.sh built.
+# Override with WORKSPACE=/your/dir.
+WORKSPACE="${WORKSPACE:-$(cd "$SCRIPT_DIR/../.." 2>/dev/null && pwd || echo /workspace)}"
 VENV_DIR=""
 
 # Find venv
