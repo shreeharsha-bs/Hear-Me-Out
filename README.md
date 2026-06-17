@@ -9,13 +9,11 @@ Try it live: https://testing-moshi--hearmeout-web-dev.modal.run/
 ## Contents
 
 - [Features](#features)
-- [Demo](#demo)
 - [Architecture](#architecture)
 - [Setup](#setup)
 - [Running](#running)
 - [Configuration](#configuration)
 - [Deploying a change](#deploying-a-change)
-- [Legacy: Modal development](#legacy-modal-development)
 
 ## Features
 
@@ -30,17 +28,6 @@ Try it live: https://testing-moshi--hearmeout-web-dev.modal.run/
 
 Through this immersive experience, we hope users will gain insights into identity, voice, and AI behavior. Ultimately, we aim to surface meaningful questions and inspire future research that promotes fairness and inclusivity with **Hear Me Out**.
 
-## Demo
-
-In the demo video, we explore the **Moshi** speech-to-speech model and its responses:
-
-<video controls width="640">
-  <source src="assets/IS_st_KTH_Hear-Me-Out-4th_draft.mp4" type="video/mp4">
-</video>
-
-**Example 1 — Emotional Awareness.** Notice how the model disambiguates between inputs with levity and frustration, correctly reflecting the speaker's emotional state in its responses. This distinction adds a more human-like quality to the interaction.
-
-**Example 2 — Voice Conversion.** By applying voice transformations, we simulate how the model might respond to different speaker characteristics. While the differences in these responses are more subtle and inconsistent under repetition, hearing oneself in another voice opens up new perspectives.
 
 ## Architecture
 
@@ -105,15 +92,3 @@ bash infra/build-frontend.sh     # only if the frontend changed
 
 A frontend-only change needs a rebuild + hard refresh, no backend restart. A backend change (`src/app.py`, `infra/meanvc_server.py`, `tools/metrics.py`) needs the service restarted.
 
-## Legacy: Modal development
-
-> The older Modal-based hosted-dev path, kept for reference. For the current backend, use the sections above.
-
-Requires `modal` (`pip install modal`), a Modal account (`modal setup`), and a token (`modal token new`).
-
-- **Local voice conversion (seed-VC):** `pip install -r local_server_requirements.txt`, then run `python local_vc_server.py` in one terminal and `modal serve -m src.app` in another.
-- **Inference module:** `modal serve -m src.moshi` — prints a WebSocket URL; file changes hot-reload.
-- **HTTP server + frontend:** `modal serve src.app` — imports `src/moshi.py`, so it also starts the Moshi server.
-- **Terminal test client:** `pip install -r requirements/requirements-dev.txt`, then `python tests/moshi_client.py` (mic + speakers required).
-
-The local server uses [Silero VAD](https://github.com/snakers4/silero-vad) to strip silence/non-speech before conversion, improving speed and quality.
