@@ -10,7 +10,7 @@
 #
 # All prompts have defaults (env vars override them); no TTY => uses defaults.
 # ============================================================================
-set -e
+set -eo pipefail
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'
 BOLD='\033[1m'; DIM='\033[2m'; NC='\033[0m'
@@ -92,12 +92,16 @@ PERSONAPLEX_URL="https://github.com/NVIDIA/personaplex.git"
 MEANVC_URL="https://github.com/ASLP-lab/MeanVC.git"
 PERSONAPLEX_COMMIT="3428dfd95309a7f3c84fd93259ded0f810d1ff91"
 
-# Derived paths (after WORKSPACE is finalized)
+# Derived paths (after WORKSPACE is finalized). Export so the helper scripts
+# (generate-ssl.sh, download-meanvc-sv.sh) honor the chosen workspace.
+export WORKSPACE
+export HF_TOKEN
 REPO_DIR="$WORKSPACE/Hear-Me-Out"
 VENV_DIR="$WORKSPACE/hearmeout-venv"
 MODELS_DIR="$WORKSPACE/models"
 PERSONAPLEX_DIR="$WORKSPACE/personaplex"
 MEANVC_DIR="$WORKSPACE/MeanVC"
+FROZEN="$REPO_DIR/infra/requirements-frozen.txt"
 
 echo; hr
 echo -e "  ${BOLD}Workspace${NC}    : $WORKSPACE"
@@ -110,100 +114,64 @@ if [ "$NONINTERACTIVE" != "1" ]; then
   read -r -p "$(printf "${CYAN}?${NC} ${BOLD}Proceed?${NC} ${DIM}[Y/n]${NC} ")" __go
   case "${__go:-Y}" in [Yy]*) ;; *) err "Aborted by user." ;; esac
 fi
-echo
 
-if $MODELS_ONLY; then
-    log "Models-only mode: skipping system/venv/repo setup"
-    source "$VENV_DIR/bin/activate" 2>/dev/null || err "venv not found at $VENV_DIR"
-    cd "$REPO_DIR"
-else
+$MODELS_ONLY && [ ! -f "$VENV_DIR/bin/activate" ] && err "venv not found at $VENV_DIR (run full setup first)."
 
-# ============================================================================
-# Phase 1: System packages
-# ============================================================================
-if $INSTALL_SYSTEM; then
-    log "Phase 1/7: Installing system packages..."
-    export DEBIAN_FRONTEND=noninteractive
-    sudo apt-get update -qq
-    sudo apt-get install -y -qq --no-install-recommends \
-        build-essential pkg-config git wget curl ca-certificates \
-        python3 python3-dev python3-pip python3-venv \
-        ffmpeg libsndfile1 libopus-dev libsoxr-dev openssl nodejs npm \
-        2>&1 | tail -3
-else
-    log "Phase 1/7: Skipping system packages (assuming they're already present)."
-fi
+# ===========================================================================
+# Phase functions. Each is self-contained and re-activates the venv so it can
+# run as a backgrounded step under the TUI without losing the environment.
+# ===========================================================================
+_venv() { [ -f "$VENV_DIR/bin/activate" ] && source "$VENV_DIR/bin/activate"; }
 
-if command -v nvidia-smi &>/dev/null; then
-    log "GPU: $(nvidia-smi --query-gpu=name --format=csv,noheader | head -1)"
-else
-    warn "nvidia-smi not found - GPU may not be available"
-fi
+phase_system() {
+  export DEBIAN_FRONTEND=noninteractive
+  sudo apt-get update -qq
+  sudo apt-get install -y -qq --no-install-recommends \
+      build-essential pkg-config git wget curl ca-certificates \
+      python3 python3-dev python3-pip python3-venv \
+      ffmpeg libsndfile1 libopus-dev libsoxr-dev openssl nodejs npm
+}
 
-# ============================================================================
-# Phase 2: Create workspace
-# ============================================================================
-log "Phase 2/7: Creating workspace at $WORKSPACE..."
-if mkdir -p "$WORKSPACE" 2>/dev/null; then
-    :  # already writable (e.g. you created it)
-elif $INSTALL_SYSTEM; then
-    sudo mkdir -p "$WORKSPACE" && sudo chown -R "$(whoami)" "$WORKSPACE"
-else
-    err "Cannot create $WORKSPACE without sudo. Create it writable first, or enable system install."
-fi
-mkdir -p "$MODELS_DIR"/{seed-vc,meanvc,meanvc-sv}
+phase_workspace() {
+  if mkdir -p "$WORKSPACE" 2>/dev/null; then :
+  elif $INSTALL_SYSTEM; then sudo mkdir -p "$WORKSPACE" && sudo chown -R "$(whoami)" "$WORKSPACE"
+  else echo "ERROR: cannot create $WORKSPACE without sudo"; return 1; fi
+  mkdir -p "$MODELS_DIR"/{seed-vc,meanvc,meanvc-sv}
+}
 
-# ============================================================================
-# Phase 3: Python virtual environment
-# ============================================================================
-log "Phase 3/7: Creating Python venv..."
-python3 -m venv "$VENV_DIR"
-source "$VENV_DIR/bin/activate"
-pip install --upgrade pip -q
+phase_venv() {
+  python3 -m venv "$VENV_DIR"
+  source "$VENV_DIR/bin/activate"
+  pip install --upgrade pip -q
+  echo "Installing PyTorch 2.4.0 (cu121)..."
+  pip install --no-cache-dir torch==2.4.0 torchaudio==2.4.0 \
+      --index-url https://download.pytorch.org/whl/cu121
+}
 
-log "Installing PyTorch 2.4.0 with CUDA 12.1..."
-pip install --no-cache-dir \
-    torch==2.4.0 torchaudio==2.4.0 \
-    --index-url https://download.pytorch.org/whl/cu121
-
-# ============================================================================
-# Phase 4: Clone repos + install moshi
-# ============================================================================
-log "Phase 4/7: Cloning repositories..."
-
-[ -d "$REPO_DIR" ] && log "Hear-Me-Out exists" || git clone --recursive "$REPO_URL" "$REPO_DIR"
-# Ensure submodules (seed-vc) are present even if the repo was cloned non-recursively.
-git -C "$REPO_DIR" submodule update --init --recursive 2>/dev/null || true
-
-if [ ! -d "$PERSONAPLEX_DIR" ]; then
-    log "Cloning PersonaPlex (NVIDIA)..."
+phase_clone() {
+  _venv
+  [ -d "$REPO_DIR" ] && echo "Hear-Me-Out exists" || git clone --recursive "$REPO_URL" "$REPO_DIR"
+  git -C "$REPO_DIR" submodule update --init --recursive 2>/dev/null || true
+  if [ ! -d "$PERSONAPLEX_DIR" ]; then
+    echo "Cloning PersonaPlex (NVIDIA)..."
     git clone "$PERSONAPLEX_URL" "$PERSONAPLEX_DIR"
-    (cd "$PERSONAPLEX_DIR" && git checkout "$PERSONAPLEX_COMMIT")
-fi
-log "Installing moshi from PersonaPlex..."
-pip install --no-cache-dir -e "$PERSONAPLEX_DIR/moshi"
+    ( cd "$PERSONAPLEX_DIR" && git checkout "$PERSONAPLEX_COMMIT" )
+  fi
+  echo "Installing moshi (editable) from PersonaPlex..."
+  pip install --no-cache-dir -e "$PERSONAPLEX_DIR/moshi"
+  [ -d "$MEANVC_DIR" ] && echo "MeanVC exists" || git clone "$MEANVC_URL" "$MEANVC_DIR"
+}
 
-[ -d "$MEANVC_DIR" ] && log "MeanVC exists" || git clone "$MEANVC_URL" "$MEANVC_DIR"
-
-# ============================================================================
-# Phase 5: Python dependencies
-# ============================================================================
-log "Phase 5/7: Installing Python dependencies..."
-
-FROZEN="$REPO_DIR/infra/requirements-frozen.txt"
-if [ -f "$FROZEN" ]; then
-    # Exact, reproducible install. torch is already present from Phase 3 (cu121
-    # index), so its pinned line in the lockfile is simply satisfied. The lockfile
-    # is the source of truth and already includes seed-vc + metrics deps.
-    log "Found lockfile — installing pinned deps from infra/requirements-frozen.txt..."
-    pip install --no-cache-dir -r "$FROZEN" 2>&1 | tail -3
-else
-    log "No lockfile — installing curated dependency set..."
-    # NOTE on safetensors: audiobox_aesthetics requires >=0.5.3, while the moshi fork
-    # *declares* <0.5. That conflict is cosmetic — moshi's safetensors load API/format is
-    # stable across 0.4–0.8 and the venv already runs huggingface-hub/transformers far past
-    # moshi's declared pins. We install >=0.5.3 so the Metrics tab's real aesthetics work.
-    # pyphen + audiobox_aesthetics power tools/metrics.py (Metrics tab + voice-change modal).
+phase_deps() {
+  _venv
+  if [ -f "$FROZEN" ]; then
+    echo "Installing pinned deps from infra/requirements-frozen.txt..."
+    pip install --no-cache-dir -r "$FROZEN"
+  else
+    echo "Installing curated dependency set..."
+    # safetensors>=0.5.3 is required by audiobox_aesthetics; moshi *declares* <0.5
+    # but that's cosmetic (load API/format stable 0.4-0.8). pyphen + audiobox power
+    # tools/metrics.py (Metrics tab + voice-change modal).
     pip install --no-cache-dir \
         numpy==1.26.4 scipy==1.13.1 einops==0.7.0 \
         "safetensors>=0.5.3" sentencepiece==0.2.0 \
@@ -214,101 +182,151 @@ else
         descript-audio-codec==1.0.0 bigvgan silero-vad \
         fastapi==0.115.5 "uvicorn[standard]==0.32.0" \
         python-multipart==0.0.18 starlette websockets \
-        "aiohttp>=3.10" omegaconf matplotlib pyphen audiobox_aesthetics werkzeug gdown \
-        2>&1 | tail -3
-
-    log "Installing seed-vc dependencies..."
-    pip install --no-cache-dir -r "$REPO_DIR/seed-vc/requirements.txt" 2>&1 | tail -3 || true
-
-    # Freeze the resolved set so the next setup is exactly reproducible.
-    # Commit this file to git to lock versions.
+        "aiohttp>=3.10" omegaconf matplotlib pyphen audiobox_aesthetics werkzeug gdown
+    echo "Installing seed-vc dependencies..."
+    pip install --no-cache-dir -r "$REPO_DIR/seed-vc/requirements.txt" || true
     pip freeze > "$FROZEN"
-    log "Frozen requirements saved to infra/requirements-frozen.txt (commit it to lock versions)"
-fi
-
-fi  # end of non-models-only block
-
-# ============================================================================
-# Phase 6: Download models
-# ============================================================================
-log "Phase 6/7: Downloading models..."
-
-# PersonaPlex model (gated - needs HF_TOKEN)
-if [ -n "$HF_TOKEN" ]; then
-    log "Downloading PersonaPlex-7B model (10-20 min)..."
-    python3 -c "
-import os; os.environ['HF_TOKEN']='$HF_TOKEN'
-from huggingface_hub import snapshot_download, hf_hub_download
-snapshot_download('nvidia/personaplex-7b-v1')
-hf_hub_download('nvidia/personaplex-7b-v1','voices.tgz')
-print('PersonaPlex model ready.')
-"
-else
-    warn "HF_TOKEN not set. PersonaPlex model is gated."
-    warn "  Accept license at: https://huggingface.co/nvidia/personaplex-7b-v1"
-    warn "  Then run: export HF_TOKEN=token && bash infra/setup.sh --models-only"
-fi
-
-# Seed-VC checkpoint
-SEEDVC_CKPT="$MODELS_DIR/seed-vc/DiT_uvit_tat_xlsr_ema.pth"
-if [ ! -f "$SEEDVC_CKPT" ]; then
-    log "Downloading Seed-VC checkpoint..."
-    python3 -c "
-from huggingface_hub import hf_hub_download; import shutil
-shutil.copy(hf_hub_download('Plachta/Seed-VC','DiT_uvit_tat_xlsr_ema.pth'),'$SEEDVC_CKPT')
-print('Seed-VC checkpoint ready.')
-"
-else
-    log "Seed-VC checkpoint present."
-fi
-
-# MeanVC checkpoints
-for model in meanvc_200ms.pt fastu2++.pt model_200ms.safetensors vocos.pt; do
-    if [ ! -f "$MODELS_DIR/meanvc/$model" ]; then
-        log "Downloading MeanVC: $model..."
-        python3 -c "
-from huggingface_hub import hf_hub_download; import shutil
-shutil.copy(hf_hub_download('ASLP-lab/MeanVC','$model'),'$MODELS_DIR/meanvc/$model')
-"
-    fi
-done
-log "MeanVC checkpoints ready."
-
-# Speaker verification model
-bash "$REPO_DIR/infra/download-meanvc-sv.sh" || {
-    warn "Speaker verification model download failed."
-    warn "  Place wavlm_large_finetune.pth at: $MODELS_DIR/meanvc-sv/"
+    echo "Lockfile written to infra/requirements-frozen.txt (commit it to pin versions)."
+  fi
 }
 
-# ============================================================================
-# Phase 7: Runtime setup + finalize
-# ============================================================================
-log "Phase 7/7: Runtime setup..."
+phase_models() {
+  _venv
+  if [ -n "$HF_TOKEN" ]; then
+    echo "Downloading PersonaPlex-7B model (10-20 min)..."
+    python3 -c "from huggingface_hub import snapshot_download, hf_hub_download; snapshot_download('nvidia/personaplex-7b-v1'); hf_hub_download('nvidia/personaplex-7b-v1','voices.tgz'); print('PersonaPlex model ready.')"
+  else
+    echo "WARN: HF_TOKEN not set — skipping gated PersonaPlex model."
+    echo "      Accept license at https://huggingface.co/nvidia/personaplex-7b-v1 then rerun with a token."
+  fi
+  local SEEDVC_CKPT="$MODELS_DIR/seed-vc/DiT_uvit_tat_xlsr_ema.pth"
+  if [ ! -f "$SEEDVC_CKPT" ]; then
+    echo "Downloading Seed-VC checkpoint..."
+    python3 -c "from huggingface_hub import hf_hub_download; import shutil; shutil.copy(hf_hub_download('Plachta/Seed-VC','DiT_uvit_tat_xlsr_ema.pth'),'$SEEDVC_CKPT'); print('Seed-VC checkpoint ready.')"
+  else echo "Seed-VC checkpoint present."; fi
+  local model
+  for model in meanvc_200ms.pt fastu2++.pt model_200ms.safetensors vocos.pt; do
+    if [ ! -f "$MODELS_DIR/meanvc/$model" ]; then
+      echo "Downloading MeanVC: $model..."
+      python3 -c "from huggingface_hub import hf_hub_download; import shutil; shutil.copy(hf_hub_download('ASLP-lab/MeanVC','$model'),'$MODELS_DIR/meanvc/$model')"
+    fi
+  done
+  echo "MeanVC checkpoints ready."
+  bash "$REPO_DIR/infra/download-meanvc-sv.sh" || echo "WARN: SV model download failed; place wavlm_large_finetune.pth in $MODELS_DIR/meanvc-sv/ manually."
+}
 
-if ! $MODELS_ONLY; then
+phase_runtime() {
+  if ! $MODELS_ONLY; then
     mkdir -p "$WORKSPACE/src/runtime/speaker_verification"
     cp "$MEANVC_DIR/src/runtime/speaker_verification/"*.py \
        "$WORKSPACE/src/runtime/speaker_verification/" 2>/dev/null || true
     touch "$WORKSPACE/src/__init__.py" "$WORKSPACE/src/runtime/__init__.py"
+  fi
+  bash "$REPO_DIR/infra/generate-ssl.sh" || true
+  cp "$REPO_DIR/infra/personaplex_entrypoint.py" "$WORKSPACE/personaplex_entry.py"; chmod +x "$WORKSPACE/personaplex_entry.py"
+  cp "$REPO_DIR/infra/run_all.sh" "$WORKSPACE/run_all.sh"; chmod +x "$WORKSPACE/run_all.sh"
+}
+
+# ===========================================================================
+# Build the ordered step list (label + function) from the chosen options.
+# ===========================================================================
+STEP_FNS=(); STEP_LABELS=(); STEP_STATE=()
+add_step() { STEP_FNS+=("$1"); STEP_LABELS+=("$2"); STEP_STATE+=("pending"); }
+if ! $MODELS_ONLY; then
+  $INSTALL_SYSTEM && add_step phase_system "Install system packages"
+  add_step phase_workspace "Create workspace"
+  add_step phase_venv      "Python venv + PyTorch (cu121)"
+  add_step phase_clone     "Clone repos + install moshi"
+  add_step phase_deps      "Install Python dependencies"
 fi
+add_step phase_models  "Download models"
+add_step phase_runtime "Runtime setup (SSL, entrypoints)"
 
-bash "$REPO_DIR/infra/generate-ssl.sh" || true
+# ===========================================================================
+# Renderer + runner. TUI = fixed header + in-place checklist; otherwise plain.
+# ===========================================================================
+TUI=0
+[ "$NONINTERACTIVE" != "1" ] && [ -t 1 ] && command -v tput >/dev/null 2>&1 && TUI=1
+SETUP_LOG="$(mktemp "${TMPDIR:-/tmp}/hmo-setup.XXXXXX.log")"
+SPIN_CH=""; LIVE_LINE=""; RENDERED=0
 
-cp "$REPO_DIR/infra/personaplex_entrypoint.py" "$WORKSPACE/personaplex_entry.py"
-chmod +x "$WORKSPACE/personaplex_entry.py"
-cp "$REPO_DIR/infra/run_all.sh" "$WORKSPACE/run_all.sh"
-chmod +x "$WORKSPACE/run_all.sh"
+print_header() {
+  echo -e "${BOLD}╭──────────────────────────────────────────────╮${NC}"
+  echo -e "${BOLD}│        Hear-Me-Out — installing backend      │${NC}"
+  echo -e "${BOLD}╰──────────────────────────────────────────────╯${NC}"
+  echo -e "  ${DIM}workspace${NC}  $WORKSPACE"
+  if command -v nvidia-smi >/dev/null 2>&1; then
+    echo -e "  ${DIM}gpu${NC}        $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -1)"
+  fi
+  echo -e "  ${DIM}log${NC}        $SETUP_LOG"
+  echo
+}
 
-echo ""
-echo "================================================"
-echo -e "${GREEN}  Setup complete!${NC}"
-echo "================================================"
-echo ""
-echo "  Workspace:   $WORKSPACE"
-echo "  Python venv: $VENV_DIR"
-echo "  Models:      $MODELS_DIR"
-echo ""
-echo "  Start:  cd $WORKSPACE && bash run_all.sh"
-echo ""
-echo "  PersonaPlex :8000   app-api :5001   MeanVC :5002"
-echo ""
+render() {  # redraw the checklist + live line in place (TUI only)
+  local i icon cols; cols=$(tput cols 2>/dev/null || echo 80)
+  [ "$RENDERED" = "1" ] && tput cuu $(( ${#STEP_FNS[@]} + 2 ))
+  RENDERED=1
+  for i in "${!STEP_FNS[@]}"; do
+    case "${STEP_STATE[$i]}" in
+      pending) icon="${DIM}○${NC}" ;;
+      run)     icon="${CYAN}${SPIN_CH:-•}${NC}" ;;
+      ok)      icon="${GREEN}✓${NC}" ;;
+      fail)    icon="${RED}✗${NC}" ;;
+    esac
+    tput el; echo -e "  $icon ${STEP_LABELS[$i]}"
+  done
+  tput el; echo
+  tput el; echo -e "    ${DIM}${LIVE_LINE:0:$((cols-6))}${NC}"
+}
+
+run_tui() {
+  tput clear; print_header
+  tput civis 2>/dev/null || true
+  trap 'tput cnorm 2>/dev/null || true' EXIT
+  local i pid rc s spin='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
+  for i in "${!STEP_FNS[@]}"; do
+    STEP_STATE[$i]="run"
+    ( set -e; "${STEP_FNS[$i]}" ) >>"$SETUP_LOG" 2>&1 &
+    pid=$!; s=0
+    while kill -0 "$pid" 2>/dev/null; do
+      SPIN_CH="${spin:$((s % 10)):1}"; s=$((s + 1))
+      LIVE_LINE="$(tail -n1 "$SETUP_LOG" 2>/dev/null | tr -d '\r' | tr -dc '[:print:]' || true)"
+      render; sleep 0.1
+    done
+    rc=0; wait "$pid" || rc=$?
+    [ "$rc" = "0" ] && STEP_STATE[$i]="ok" || STEP_STATE[$i]="fail"
+    SPIN_CH=""; LIVE_LINE=""; render
+    if [ "$rc" != "0" ]; then
+      tput cnorm 2>/dev/null || true
+      echo; echo -e "${RED}✗ Failed: ${STEP_LABELS[$i]}${NC}  ${DIM}(last 25 log lines)${NC}"
+      tail -n 25 "$SETUP_LOG"
+      echo -e "${DIM}Full log: $SETUP_LOG${NC}"
+      exit 1
+    fi
+  done
+  tput cnorm 2>/dev/null || true
+}
+
+run_plain() {
+  print_header
+  local i
+  for i in "${!STEP_FNS[@]}"; do
+    log "[$((i + 1))/${#STEP_FNS[@]}] ${STEP_LABELS[$i]}"
+    "${STEP_FNS[$i]}" 2>&1 | tee -a "$SETUP_LOG" || err "Failed: ${STEP_LABELS[$i]} (see $SETUP_LOG)"
+  done
+}
+
+# Prime sudo before the TUI hides output, so any password prompt is visible now.
+if ! $MODELS_ONLY && $INSTALL_SYSTEM; then sudo -v 2>/dev/null || true; fi
+
+echo
+if [ "$TUI" = "1" ]; then run_tui; else run_plain; fi
+
+echo
+echo -e "${GREEN}✓ Setup complete!${NC}"
+echo -e "  ${BOLD}workspace${NC}  $WORKSPACE"
+echo -e "  ${BOLD}venv${NC}       $VENV_DIR"
+echo -e "  ${BOLD}start${NC}      cd $WORKSPACE && bash run_all.sh"
+echo -e "  ${BOLD}ports${NC}      PersonaPlex :8000   app-api :5001   MeanVC :5002"
+[ -n "$HF_TOKEN" ] || echo -e "  ${YELLOW}note${NC}       HF_TOKEN was not set — rerun with a token to fetch PersonaPlex."
+echo
