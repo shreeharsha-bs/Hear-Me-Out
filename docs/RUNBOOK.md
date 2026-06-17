@@ -9,18 +9,19 @@ script. See `docs/ARCHITECTURE.md` for what the services are.
   (accept the license at https://huggingface.co/nvidia/personaplex-7b-v1).
 
 ## Fresh setup into any workspace folder
-`infra/setup.sh` is `WORKSPACE`-parameterized — set `WORKSPACE` to stand up a parallel,
-independent environment (e.g. `/workspace2`).
+`infra/setup.sh` is self-bootstrapping and `WORKSPACE`-parameterized — curl it and run; set
+`WORKSPACE` to stand up a parallel, independent environment (e.g. `/home/jovyan/workspace`).
 
 ```bash
-git clone --recursive <repo-url> /tmp/hmo && cd /tmp/hmo
 export HF_TOKEN=hf_xxx
-WORKSPACE=/workspace2 bash infra/setup.sh
+curl -fsSL https://raw.githubusercontent.com/syedfahimabrar/Hear-Me-Out/main/infra/setup.sh -o setup.sh
+WORKSPACE=/home/jovyan/workspace bash setup.sh
 ```
-This installs system packages, creates the venv (`$WORKSPACE/hearmeout-venv`), clones
-PersonaPlex (pinned commit) + MeanVC, installs deps (from `infra/requirements-frozen.txt` if
-committed, else the curated list, then freezes), downloads all models, copies the speaker-
-verification module, generates SSL, and deploys `personaplex_entry.py` + `run_all.sh`.
+This installs system packages, creates the venv (`$WORKSPACE/hearmeout-venv`), clones the repo
+(with the `seed-vc` submodule) + PersonaPlex (pinned commit) + MeanVC, installs deps (from
+`infra/requirements-frozen.txt` if committed, else the curated list, then freezes), downloads
+all models, copies the speaker-verification module, generates SSL, and deploys
+`personaplex_entry.py` + `run_all.sh`. Override the source with `REPO_URL=...` if needed.
 
 Models only (deps/venv already present):
 ```bash
