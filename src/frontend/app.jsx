@@ -1,6 +1,8 @@
 const { useRef, useEffect, useState } = React;
 
-const baseURL = "" // points to whatever is serving this app (eg your -dev.modal.run for modal serve, or .modal.run for modal deploy)
+const apiBase = window.__API_BASE__ || '';
+const PERSONAPLEX_HOST = window.__PERSONAPLEX_WS_URL__ ? null : (window.__PERSONAPLEX_HOST__ || window.location.hostname);
+const MEANVC_HOST = window.__MEANVC_HOST__ || window.location.hostname;
 
 // Helper function to generate a timestamp for the filename
 const getTimestamp = () => {
@@ -62,16 +64,31 @@ const writeString = (view, offset, string) => {
   }
 };
 
-const getBaseURL = () => {
-  // use current web app server domain to construct the url for the moshi app
-  const currentURL = new URL(window.location.href);
-  let hostname = currentURL.hostname;
-  hostname = hostname.replace('-web', '-moshi-web');
-  const wsProtocol = currentURL.protocol === 'https:' ? 'wss:' : 'ws:';
-  return `${wsProtocol}//${hostname}/ws`; 
+const getPersonaplexWsURL = () => {
+  if (window.__PERSONAPLEX_WS_URL__) {
+    return window.__PERSONAPLEX_WS_URL__;
+  }
+  const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  let hostname = window.__PERSONAPLEX_HOST__ || window.location.hostname;
+  if (hostname === '0.0.0.0' || hostname === '127.0.0.1') {
+    hostname = 'localhost';
+  }
+  const voicePrompt = window.__VOICE_PROMPT__ || 'NATF2.pt';
+  const textPrompt = window.__TEXT_PROMPT__ || 'You enjoy having a good conversation.';
+  return `${wsProtocol}//${hostname}:8000/api/chat?voice_prompt=${encodeURIComponent(voicePrompt)}&text_prompt=${encodeURIComponent(textPrompt)}`;
 }
 
 const App = () => {
+  // View toggle: /?view=meanvc shows MeanVC test, default is conversation
+  const params = new URLSearchParams(window.location.search);
+  const [currentView, setCurrentView] = useState(
+    params.get('view') === 'meanvc' ? 'meanvc' : 'conversation'
+  );
+  const switchView = (view) => {
+    setCurrentView(view);
+    window.history.replaceState({}, '', view === 'meanvc' ? '/?view=meanvc' : '/');
+  };
+
   // Mic Input
   const [recorder, setRecorder] = useState(null); // Opus recorder
   const [amplitude, setAmplitude] = useState(0); // Amplitude, captured from PCM analyzer
@@ -120,8 +137,144 @@ const App = () => {
   const [secondAIRecording, setSecondAIRecording] = useState(null); // Second AI voice recording for comparison
   const [conversationCount, setConversationCount] = useState(0); // Track number of conversations
 
+  // MeanVC Voice Conversion Pipeline
+  const [vcEnabled, setVcEnabled] = useState(false);
+  const [vcTargetId, setVcTargetId] = useState(null);
+  const [vcTargetFile, setVcTargetFile] = useState(null);
+  const [vcStatus, setVcStatus] = useState('');
+  const meanvcWsRef = useRef(null);
+  const pcmStreamRef = useRef(null);
+  const pcmContextRef = useRef(null);
+
+  const uploadVcTarget = async (file) => {
+    if (!file) return;
+    setVcTargetFile(file.name);
+    setVcStatus('Loading target voice...');
+    const fd = new FormData();
+    fd.append('wav', file);
+    try {
+      const resp = await fetch(`https://${MEANVC_HOST}:5002/api/meanvc/load-target`, {
+        method: 'POST', body: fd,
+      });
+      const data = await resp.json();
+      if (data.target_id) {
+        setVcTargetId(data.target_id);
+        setVcStatus(`Target ready: ${file.name} (${data.duration_seconds}s)`);
+      } else {
+        setVcStatus('Error: ' + (data.error || 'unknown'));
+      }
+    } catch (e) {
+      setVcStatus('Error: ' + e.message);
+    }
+  };
+
+  // MeanVC Voice Conversion Pipeline: Mic → MeanVC → PersonaPlex
+  const startVCStreamingPipeline = async () => {
+    setVcStatus('Starting voice conversion pipeline...');
+
+    // 1. Get raw mic
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: { sampleRate: 16000, channelCount: 1, echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+    });
+    pcmStreamRef.current = stream;
+    recordingStreamRef.current = stream;
+
+    // 2. AudioContext for PCM capture + VC output playback
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+    pcmContextRef.current = audioCtx;
+
+    // 3. ScriptProcessor to capture mic PCM
+    const source = audioCtx.createMediaStreamSource(stream);
+    const processor = audioCtx.createScriptProcessor(2048, 1, 1);
+
+    // 4. MediaStreamDestination for VC output → OpusRecorder
+    const vcDest = audioCtx.createMediaStreamDestination();
+
+    // 5. Connect to MeanVC WS
+    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const meanvcUrl = `${wsProtocol}//${MEANVC_HOST}:5002/api/meanvc/stream?target_id=${vcTargetId}&steps=8&source_sr=${audioCtx.sampleRate}`;
+    const meanvcWs = new WebSocket(meanvcUrl);
+    meanvcWsRef.current = meanvcWs;
+
+    let vcOutputTime = audioCtx.currentTime + 0.5;
+
+    meanvcWs.onmessage = async (event) => {
+      if (typeof event.data === 'string') return;
+      // Got converted PCM from MeanVC → write to virtual stream
+      const float32 = new Float32Array(await event.data.arrayBuffer());
+      if (float32.length === 0) return;
+      const buf = audioCtx.createBuffer(1, float32.length, 16000);
+      buf.getChannelData(0).set(float32);
+      const bufSource = audioCtx.createBufferSource();
+      bufSource.buffer = buf;
+      bufSource.connect(vcDest);
+      bufSource.start(vcOutputTime);
+      vcOutputTime = Math.max(vcOutputTime + buf.duration, audioCtx.currentTime + 0.01);
+    };
+
+    // 6. OpusRecorder captures from VC output stream → PersonaPlex WS
+    const vcRecorder = new Recorder({
+      encoderPath: "https://cdn.jsdelivr.net/npm/opus-recorder@latest/dist/encoderWorker.min.js",
+      streamPages: true,
+      encoderApplication: 2049,
+      encoderFrameSize: 40,
+      encoderSampleRate: 16000,
+      maxFramesPerPage: 1,
+      numberOfChannels: 1,
+    });
+
+    vcRecorder.ondataavailable = async (arrayBuffer) => {
+      if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+        const tagged = new Uint8Array(arrayBuffer.byteLength + 1);
+        tagged[0] = 1;
+        tagged.set(new Uint8Array(arrayBuffer), 1);
+        await socketRef.current.send(tagged.buffer);
+      }
+    };
+
+    meanvcWs.onopen = () => {
+      setVcStatus('Connected - streaming voice conversion');
+      // Start OpusRecorder on VC output
+      vcRecorder.start(vcDest.stream).then(() => {
+        // Start sending mic PCM to MeanVC
+        processor.onaudioprocess = (e) => {
+          if (meanvcWs.readyState === WebSocket.OPEN) {
+            meanvcWs.send(e.inputBuffer.getChannelData(0).buffer);
+          }
+        };
+        source.connect(processor);
+        processor.connect(audioCtx.destination); // silence
+      });
+    };
+
+    meanvcWs.onclose = () => setVcStatus('MeanVC disconnected');
+    meanvcWs.onerror = () => setVcStatus('MeanVC WebSocket error');
+
+    // Set recorder for amplitude/mute control
+    setRecorder(vcRecorder);
+    setIsRecording(true);
+
+    // Amplitude analyzer
+    const analyzerCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const analyzer = analyzerCtx.createAnalyser();
+    analyzer.fftSize = 256;
+    analyzerCtx.createMediaStreamSource(stream).connect(analyzer);
+    const processAudio = () => {
+      const dataArray = new Uint8Array(analyzer.frequencyBinCount);
+      analyzer.getByteFrequencyData(dataArray);
+      setAmplitude(dataArray.reduce((a, b) => a + b, 0) / dataArray.length);
+      requestAnimationFrame(processAudio);
+    };
+    processAudio();
+  };
+
   // Mic Input: start the Opus recorder
   const startRecording = async () => {
+    if (vcEnabled && vcTargetId) {
+      await startVCStreamingPipeline();
+      return;
+    }
+    // Original OpusRecorder flow (no VC)
     // Reset recorded chunks and model responses for new recording
     setRecordedChunks([]);
     setRecordingAvailable(false);
@@ -148,7 +301,10 @@ const App = () => {
           console.log("Socket not open, dropping audio");
           return;
         }
-        await socketRef.current.send(arrayBuffer);
+        const tagged = new Uint8Array(arrayBuffer.byteLength + 1);
+        tagged[0] = 1;
+        tagged.set(new Uint8Array(arrayBuffer), 1);
+        await socketRef.current.send(tagged.buffer);
       }
     };
 
@@ -198,6 +354,20 @@ const App = () => {
 
   // Stop recording and websocket connection
   const stopRecording = () => {
+    // Clean up MeanVC pipeline
+    if (meanvcWsRef.current) {
+      meanvcWsRef.current.close();
+      meanvcWsRef.current = null;
+    }
+    if (pcmContextRef.current) {
+      pcmContextRef.current.close();
+      pcmContextRef.current = null;
+    }
+    if (pcmStreamRef.current) {
+      pcmStreamRef.current.getTracks().forEach(t => t.stop());
+      pcmStreamRef.current = null;
+    }
+
     if (recorder) {
       recorder.stop();
       setIsRecording(false);
@@ -236,8 +406,8 @@ const App = () => {
       try {
         // Use the local server endpoint to load the default target file
         const fileName = 'tara__chuckle_Hey_I_know_this_is_a_bit_of_a_weird_request_but_laugh_I_really_need_to_get_into_the_server_room_Can_you_let_me_in_.wav';
-        const defaultTargetPath = `http://127.0.0.1:5001/recordings/${fileName}`;
-        const response = await fetch(defaultTargetPath);
+        const defaultTargetPath = `recordings/${fileName}`;
+        const response = await fetch(`${apiBase}/${defaultTargetPath}`);
         
         if (response.ok) {
           const blob = await response.blob();
@@ -444,15 +614,13 @@ const App = () => {
     // Increment conversation count
     setConversationCount(prev => prev + 1);
 
-    const endpoint = getBaseURL();
+    const endpoint = getPersonaplexWsURL();
     console.log("Connecting to", endpoint);
     const socket = new WebSocket(endpoint);
     socketRef.current = socket;
 
     socket.onopen = () => {
-      console.log("WebSocket connection opened");
-      startRecording();
-      setWarmupComplete(true);
+      console.log("WebSocket connection opened, waiting for PersonaPlex handshake...");
     };
 
     socket.onmessage = async (event) => {
@@ -461,6 +629,13 @@ const App = () => {
       const view = new Uint8Array(arrayBuffer);
       const tag = view[0];
       const payload = arrayBuffer.slice(1);
+      if (tag === 0) {
+        // PersonaPlex handshake - server is ready, start sending audio
+        console.log("Received PersonaPlex handshake, starting recording");
+        startRecording();
+        setWarmupComplete(true);
+        return;
+      }
       if (tag === 1) {
         // audio data
         const { channelData, samplesDecoded, sampleRate } = await decoderRef.current.decode(new Uint8Array(payload));
@@ -525,9 +700,9 @@ const App = () => {
       formData.append('length_adjust', '1.0');
       formData.append('inference_cfg_rate', '0.7');
 
-      const response = await fetch('http://127.0.0.1:5001/api/voice-conversion', {
-        method: 'POST',
-        body: formData,
+const response = await fetch(apiBase + '/api/voice-conversion', {
+          method: 'POST',
+          body: formData,
       });
 
       if (!response.ok) {
@@ -565,9 +740,9 @@ const App = () => {
       formData.append('source_audio', firstAIRecording);
       formData.append('target_audio', secondAIRecording);
 
-      const response = await fetch('http://127.0.0.1:5001/api/metrics-comparison', {
-        method: 'POST',
-        body: formData,
+const response = await fetch(apiBase + '/api/metrics-comparison', {
+          method: 'POST',
+          body: formData,
       });
 
       if (!response.ok) {
@@ -593,14 +768,26 @@ const App = () => {
     <div className="bg-gray-900 text-white min-h-screen flex flex-col">
       <header className="w-full flex items-center p-4 bg-gray-800 fixed top-0 left-0 z-10">
         <img src="./KTH_Logo.jpg" alt="KTH Logo" className="h-20 mr-4" />
-        <div>
+        <div className="flex-1">
           <h1 className="text-3xl font-bold">Hear Me Out</h1>
           <h2 className="text-xl">Interactive evaluation and bias discovery platform for
           speech-to-speech conversational AI</h2>
           <h3 className="text-lg">KTH Royal Institute of Technology, Stockholm, Sweden</h3>
         </div>
+        <button
+          onClick={() => switchView(currentView === 'conversation' ? 'meanvc' : 'conversation')}
+          className={`px-4 py-2 rounded-lg font-semibold text-sm transition-colors ${
+            currentView === 'meanvc' ? 'bg-gray-600 hover:bg-gray-500' : 'bg-green-600 hover:bg-green-500'
+          }`}
+        >
+          {currentView === 'conversation' ? 'Voice Conversion Test' : 'PersonaPlex Chat'}
+        </button>
       </header>
-      
+
+      {currentView === 'meanvc' ? (
+        <MeanVCTest />
+      ) : (
+      <>
       <div className="flex h-screen pt-32">
         {/* Collapsible Sidebar */}
         <div className={`${isSidebarCollapsed ? 'w-12' : 'w-80'} bg-gray-800 fixed left-0 top-32 bottom-0 transition-all duration-300 shadow-lg flex flex-col h-auto z-10`}>
@@ -651,6 +838,61 @@ const App = () => {
                   </div>
                 </div>
                 
+                {/* PersonaPlex Prompt Controls */}
+                <div className="mt-6 p-4 bg-gray-700 rounded-lg w-full">
+                  <h3 className="text-sm font-semibold text-blue-400 mb-3">Persona Settings</h3>
+                  <div className="grid grid-cols-1 gap-3">
+                    <div>
+                      <label className="block text-xs text-gray-400 mb-1">Voice Prompt</label>
+                      <select
+                        className="w-full bg-gray-600 text-white text-sm rounded px-3 py-2"
+                        defaultValue={window.__VOICE_PROMPT__ || 'NATF2.pt'}
+                        onChange={(e) => { window.__VOICE_PROMPT__ = e.target.value; }}
+                      >
+                        <option value="NATF0.pt">NATF0 - Natural Female 0</option>
+                        <option value="NATF1.pt">NATF1 - Natural Female 1</option>
+                        <option value="NATF2.pt">NATF2 - Natural Female 2</option>
+                        <option value="NATF3.pt">NATF3 - Natural Female 3</option>
+                        <option value="NATM0.pt">NATM0 - Natural Male 0</option>
+                        <option value="NATM1.pt">NATM1 - Natural Male 1</option>
+                        <option value="NATM2.pt">NATM2 - Natural Male 2</option>
+                        <option value="NATM3.pt">NATM3 - Natural Male 3</option>
+                        <option value="VARF0.pt">VARF0 - Variety Female 0</option>
+                        <option value="VARF1.pt">VARF1 - Variety Female 1</option>
+                        <option value="VARM0.pt">VARM0 - Variety Male 0</option>
+                        <option value="VARM1.pt">VARM1 - Variety Male 1</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-400 mb-1">Text Prompt (Persona)</label>
+                      <textarea
+                        className="w-full bg-gray-600 text-white text-sm rounded px-3 py-2"
+                        rows="2"
+                        defaultValue={window.__TEXT_PROMPT__ || 'You enjoy having a good conversation.'}
+                        onChange={(e) => { window.__TEXT_PROMPT__ = e.target.value; }}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* MeanVC Voice Conversion Pipeline */}
+                <div className="mt-6 p-4 bg-gray-700 rounded-lg w-full">
+                  <h3 className="text-sm font-semibold text-purple-400 mb-3">Voice Conversion Pipeline (MeanVC)</h3>
+                  <p className="text-xs text-gray-400 mb-2">Route your mic through MeanVC to speak as the target voice</p>
+                  <div className="flex items-center gap-3 mb-3">
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input type="checkbox" className="sr-only peer" checked={vcEnabled}
+                        onChange={(e) => setVcEnabled(e.target.checked)} />
+                      <div className="w-9 h-5 bg-gray-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-600"></div>
+                      <span className="ms-3 text-xs text-gray-300">{vcEnabled ? 'Enabled' : 'Disabled'}</span>
+                    </label>
+                    {vcStatus && <span className={`text-xs ${vcStatus.includes('Error') ? 'text-red-400' : 'text-green-400'}`}>{vcStatus}</span>}
+                  </div>
+                    <input type="file" accept="audio/wav,.wav" onChange={(e) => uploadVcTarget(e.target.files[0])}
+                      className="w-full text-xs text-gray-300 file:mr-4 file:py-1 file:px-3 file:rounded file:bg-purple-600 file:text-white file:border-0 hover:file:bg-purple-500" />
+                    {!vcEnabled && !vcTargetId && <p className="text-xs text-gray-500 mt-1">Enable the toggle to activate</p>}
+                </div>
+
                 {/* Voice Conversion Section */}
                 <div className="mt-6 p-4 bg-gray-700 rounded-lg">
                   <h3 className="text-lg font-semibold text-blue-400 mb-4">Voice Conversion</h3>
@@ -925,48 +1167,282 @@ const App = () => {
           </div>
         </div>
       </div>
-    </div>
-  );
-}
-
-const PreviousConversationDisplay = ({ conversation, conversationNumber }) => {
-  const allSentences = [...conversation.completedSentences];
-  if (conversation.pendingSentence.trim() !== '') {
-    allSentences.push(conversation.pendingSentence);
-  }
-
-  // Remove empty last sentence if it exists
-  if (allSentences.length > 1 && allSentences[allSentences.length - 1].trim() === '') {
-    allSentences.pop();
-  }
-
-  return (
-    <div className="min-w-[32rem] max-w-2xl">
-      <div className="bg-gray-800 rounded-lg shadow-lg w-full p-6 flex flex-col items-center border-l-4 border-blue-300">
-        <div className="flex w-full mb-2">
-          <h3 className="text-lg font-semibold text-blue-300">
-            Response to Original Voice (Conversation {conversationNumber})
-          </h3>
-        </div>
-        <div className="w-full">
-          <div className="flex flex-col-reverse overflow-y-auto max-h-64 pr-2">
-            {conversation.warmupComplete ? (
-              allSentences.length > 0 ? (
-                allSentences.map((sentence, index) => (
-                  <p key={index} className="text-gray-300 my-2">{sentence}</p>
-                )).reverse()
-              ) : (
-                <p className="text-gray-400 italic">No responses recorded</p>
-              )
-            ) : (
-              <p className="text-gray-400 italic">Conversation was not completed</p>
-            )}
-          </div>
-        </div>
-      </div>
+      </>
+    )}
     </div>
   );
 };
+
+// MeanVC Test Component
+const MeanVCTest = () => {
+  const [targetId, setTargetId] = useState(null);
+  const [targetInfo, setTargetInfo] = useState(null);
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [status, setStatus] = useState("Upload a target voice file to begin");
+  const [inputDevices, setInputDevices] = useState([]);
+  const [outputDevices, setOutputDevices] = useState([]);
+  const [selectedInputDevice, setSelectedInputDevice] = useState("");
+  const [selectedOutputDevice, setSelectedOutputDevice] = useState("");
+  const wsRef = useRef(null);
+  const streamRef = useRef(null);
+  const audioContextRef = useRef(null);
+  const processorRef = useRef(null);
+
+  const MEANVC_HOST = window.__MEANVC_HOST__ || window.location.hostname;
+  const MEANVC_PORT = 5002;
+  const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+
+  useEffect(() => {
+    navigator.mediaDevices.enumerateDevices().then((devices) => {
+      setInputDevices(devices.filter((d) => d.kind === "audioinput"));
+      setOutputDevices(devices.filter((d) => d.kind === "audiooutput"));
+    });
+  }, []);
+
+  const uploadTarget = async (file) => {
+    setStatus("Extracting speaker embedding...");
+    const formData = new FormData();
+    formData.append("wav", file);
+    try {
+      const resp = await fetch(`${window.location.protocol}//${MEANVC_HOST}:${MEANVC_PORT}/api/meanvc/load-target`, {
+        method: "POST",
+        body: formData,
+      });
+      const data = await resp.json();
+      if (data.target_id) {
+        setTargetId(data.target_id);
+        setTargetInfo(data);
+        setStatus(`Target loaded: ${file.name} (${data.duration_seconds}s)`);
+      } else {
+        setStatus("Error loading target: " + (data.error || "unknown error"));
+      }
+    } catch (e) {
+      setStatus("Error loading target: " + e.message);
+    }
+  };
+
+  const startStream = async () => {
+    if (!targetId) {
+      setStatus("Upload a target voice file first");
+      return;
+    }
+    setStatus("Starting stream...");
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          deviceId: selectedInputDevice ? { exact: selectedInputDevice } : undefined,
+          sampleRate: 16000,
+          channelCount: 1,
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: false,
+        },
+      });
+      streamRef.current = stream;
+
+      const audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+      audioContextRef.current = audioCtx;
+      console.log("AudioContext sample rate:", audioCtx.sampleRate);
+
+      // ScriptProcessor to capture raw 16kHz float32
+      const source = audioCtx.createMediaStreamSource(stream);
+      const processor = audioCtx.createScriptProcessor(2048, 1, 1);
+      processorRef.current = processor;
+
+      const wsUrl = `${wsProtocol}//${MEANVC_HOST}:${MEANVC_PORT}/api/meanvc/stream?target_id=${targetId}&steps=8&source_sr=${audioCtx.sampleRate}`;
+      const ws = new WebSocket(wsUrl);
+      wsRef.current = ws;
+
+      const scheduleTimeRef = { current: 0 };
+
+      ws.onopen = () => {
+        scheduleTimeRef.current = audioCtx.currentTime + 0.1;
+        setStatus("Connected - streaming audio");
+      };
+
+      ws.onmessage = async (event) => {
+        if (typeof event.data === "string") {
+          const msg = JSON.parse(event.data);
+          if (msg.status === "ready") setStatus("Streaming voice conversion...");
+          return;
+        }
+        // Play received audio, scheduled sequentially to avoid overlap
+        const float32 = new Float32Array(await event.data.arrayBuffer());
+        const buffer = audioCtx.createBuffer(1, float32.length, 16000);
+        buffer.getChannelData(0).set(float32);
+        const outSource = audioCtx.createBufferSource();
+        outSource.buffer = buffer;
+        outSource.connect(audioCtx.destination);
+        const startTime = Math.max(scheduleTimeRef.current, audioCtx.currentTime);
+        outSource.start(startTime);
+        scheduleTimeRef.current = startTime + buffer.duration;
+      };
+
+      ws.onerror = () => setStatus("WebSocket error");
+      ws.onclose = () => { setIsStreaming(false); setStatus("Stream stopped"); };
+
+      // Send audio chunks to server (server handles accumulation)
+      processor.onaudioprocess = (e) => {
+        if (ws.readyState === WebSocket.OPEN) {
+          const input = e.inputBuffer.getChannelData(0);
+          ws.send(input.buffer);
+        }
+      };
+
+      source.connect(processor);
+      processor.connect(audioCtx.destination); // Silence pass-through
+      setIsStreaming(true);
+    } catch (e) {
+      setStatus("Error: " + e.message);
+    }
+  };
+
+  const stopStream = () => {
+    if (processorRef.current) processorRef.current.disconnect();
+    if (streamRef.current) streamRef.current.getTracks().forEach((t) => t.stop());
+    if (audioContextRef.current) audioContextRef.current.close();
+    if (wsRef.current) wsRef.current.close();
+    setIsStreaming(false);
+    setStatus("Stopped");
+  };
+
+  useEffect(() => {
+    return () => {
+      if (streamRef.current) streamRef.current.getTracks().forEach((t) => t.stop());
+      if (wsRef.current) wsRef.current.close();
+    };
+  }, []);
+
+  return (
+    <div className="pt-24 p-6 max-w-2xl mx-auto w-full space-y-6">
+      <div className="text-center mb-4">
+        <h1 className="text-3xl font-bold text-green-400">Voice Conversion Test Bench</h1>
+        <p className="text-sm text-gray-400 mt-2">Test Seed-VC (one-shot) and MeanVC (real-time streaming)</p>
+      </div>
+        {/* Target Voice Upload */}
+        <div className="bg-gray-800 rounded-lg p-6">
+          <h2 className="text-lg font-semibold text-blue-400 mb-3">1. Target Voice</h2>
+          {targetInfo && (
+            <p className="text-sm text-green-400 mb-2">
+              Loaded: {targetInfo.duration_seconds}s ({targetId})
+            </p>
+          )}
+          <input
+            type="file"
+            accept="audio/wav,.wav"
+            onChange={(e) => { if (e.target.files[0]) uploadTarget(e.target.files[0]); }}
+            className="w-full text-sm text-gray-300 file:mr-4 file:py-2 file:px-4 file:rounded file:bg-blue-600 file:text-white file:border-0 hover:file:bg-blue-500"
+          />
+        </div>
+
+        {/* Device Selection */}
+        <div className="bg-gray-800 rounded-lg p-6">
+          <h2 className="text-lg font-semibold text-blue-400 mb-3">2. Device Selection</h2>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">Input (Microphone)</label>
+              <select
+                value={selectedInputDevice}
+                onChange={(e) => setSelectedInputDevice(e.target.value)}
+                className="w-full bg-gray-700 text-white text-sm rounded px-3 py-2"
+              >
+                <option value="">Default</option>
+                {inputDevices.map((d) => (
+                  <option key={d.deviceId} value={d.deviceId}>{d.label || d.deviceId}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">Output (Speaker)</label>
+              <select
+                value={selectedOutputDevice}
+                onChange={(e) => setSelectedOutputDevice(e.target.value)}
+                className="w-full bg-gray-700 text-white text-sm rounded px-3 py-2"
+              >
+                <option value="">Default</option>
+                {outputDevices.map((d) => (
+                  <option key={d.deviceId} value={d.deviceId}>{d.label || d.deviceId}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+        </div>
+
+        {/* Controls */}
+        <div className="bg-gray-800 rounded-lg p-6">
+          <h2 className="text-lg font-semibold text-blue-400 mb-3">3. Stream</h2>
+          <div className="flex gap-4">
+            <button
+              onClick={startStream}
+              disabled={isStreaming}
+              className="px-6 py-3 bg-green-600 hover:bg-green-500 disabled:bg-gray-600 rounded-lg font-semibold text-white"
+            >
+              {isStreaming ? "Streaming..." : "Start Streaming"}
+            </button>
+            <button
+              onClick={stopStream}
+              disabled={!isStreaming}
+              className="px-6 py-3 bg-red-600 hover:bg-red-500 disabled:bg-gray-600 rounded-lg font-semibold text-white"
+            >
+              Stop
+            </button>
+          </div>
+          <p className="mt-3 text-sm text-gray-300">
+            Status: <span className={isStreaming ? "text-green-400" : "text-yellow-400"}>{status}</span>
+          </p>
+        </div>
+
+        {/* Seed-VC One-Shot Test */}
+        <SeedVCTest />
+      </div>
+  );
+};
+
+// Seed-VC One-Shot Test Component
+const SeedVCTest = () => {
+  const [svSource, setSvSource] = useState(null);
+  const [svTarget, setSvTarget] = useState(null);
+  const [svConverting, setSvConverting] = useState(false);
+  const [svResult, setSvResult] = useState(null);
+  const [svError, setSvError] = useState(null);
+
+  const convert = async () => {
+    if (!svSource || !svTarget) { setSvError("Select both source and target audio"); return; }
+    setSvConverting(true); setSvError(null);
+    const fd = new FormData();
+    fd.append("source_audio", svSource);
+    fd.append("target_audio", svTarget);
+    try {
+      const resp = await fetch(apiBase + "/api/voice-conversion", { method: "POST", body: fd });
+      if (!resp.ok) throw new Error((await resp.json()).detail || resp.statusText);
+      const blob = await resp.blob();
+      setSvResult(URL.createObjectURL(blob));
+    } catch (e) { setSvError(e.message); }
+    setSvConverting(false);
+  };
+
+  return (
+    <div className="bg-gray-800 rounded-lg p-6">
+      <h2 className="text-lg font-semibold text-blue-400 mb-3">Seed-VC (One-Shot Voice Conversion)</h2>
+      <div className="grid grid-cols-2 gap-4 mb-4">
+        <div>
+          <label className="block text-xs text-gray-400 mb-1">Source Audio</label>
+          <input type="file" accept="audio/*" onChange={e => setSvSource(e.target.files[0])} className="w-full text-sm text-gray-300 file:mr-4 file:py-2 file:px-4 file:rounded file:bg-blue-600 file:text-white file:border-0 hover:file:bg-blue-500" />
+        </div>
+        <div>
+          <label className="block text-xs text-gray-400 mb-1">Target Voice (reference)</label>
+          <input type="file" accept="audio/*" onChange={e => setSvTarget(e.target.files[0])} className="w-full text-sm text-gray-300 file:mr-4 file:py-2 file:px-4 file:rounded file:bg-blue-600 file:text-white file:border-0 hover:file:bg-blue-500" />
+        </div>
+      </div>
+      <button onClick={convert} disabled={svConverting} className="px-6 py-3 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-600 rounded-lg font-semibold text-white">
+        {svConverting ? "Converting..." : "Convert"}
+      </button>
+      {svError && <p className="mt-3 text-sm text-red-400">{svError}</p>}
+      {svResult && <audio controls src={svResult} className="mt-3 w-full" />}
+    </div>
+  );
+};
+
 
 const SuggestionSidebar = () => {
   const suggestions = [

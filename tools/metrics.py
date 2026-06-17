@@ -27,8 +27,11 @@ def get_transcript(audio_path):
     """
     try:
         # Use a smaller model for faster processing, or a larger one for higher accuracy
-        transcriber = pipeline("automatic-speech-recognition", model="openai/whisper-small", device='mps' if torch.cuda.is_available() else 'cpu')
-        transcript = transcriber(audio_path)["text"]
+        transcriber = pipeline("automatic-speech-recognition", model="openai/whisper-small", device='cuda' if torch.cuda.is_available() else 'cpu')
+        # chunk_length_s enables Whisper's long-form algorithm; without it the
+        # pipeline only handles the first 30s and raises on longer clips
+        # (which previously got swallowed -> empty transcript -> 0 syl/s).
+        transcript = transcriber(audio_path, chunk_length_s=30, batch_size=8)["text"]
         return transcript
     except Exception as e:
         print(f"Error during transcription: {e}")
@@ -81,7 +84,7 @@ def analyze_sentiment(transcript):
     """
     try:
         print(transcript)
-        sentiment_pipeline = pipeline("sentiment-analysis", model="distilbert/distilbert-base-uncased-finetuned-sst-2-english", device='mps' if torch.cuda.is_available() else 'cpu')
+        sentiment_pipeline = pipeline("sentiment-analysis", model="distilbert/distilbert-base-uncased-finetuned-sst-2-english", device='cuda' if torch.cuda.is_available() else 'cpu')
         result = sentiment_pipeline(transcript)
         return result[0]['label']
     except Exception as e:
@@ -94,14 +97,14 @@ def calculate_semantic_similarity(transcript_a, transcript_b):
     Calculates the semantic similarity between two transcripts.
     """
     try:
-        model = SentenceTransformer('all-MiniLM-L6-v2', device='mps' if torch.cuda.is_available() else 'cpu')
+        model = SentenceTransformer('all-MiniLM-L6-v2', device='cuda' if torch.cuda.is_available() else 'cpu')
         
         # Compute embedding for both transcripts
         embedding_1 = model.encode(transcript_a, convert_to_tensor=True)
         embedding_2 = model.encode(transcript_b, convert_to_tensor=True)
         
         # Compute cosine-similarity
-        cosine_scores = np.abs(util.cos_sim(embedding_1, embedding_2))
+        cosine_scores = torch.abs(util.cos_sim(embedding_1, embedding_2))
         return cosine_scores.item()
     except Exception as e:
         print(f"Error calculating semantic similarity: {e}")
@@ -116,12 +119,21 @@ def analyze_voices(audio_path_a, audio_path_b):
     transcript_a = get_transcript(audio_path_a)
     transcript_b = get_transcript(audio_path_b)
 
+    def _safe_duration(path):
+        try:
+            return float(librosa.get_duration(path=path))
+        except Exception as e:
+            print(f"Error getting duration: {e}")
+            return None
+
     # Calculate metrics for Response A
     metrics_a = {
         "speech_rate": calculate_speech_rate(audio_path_a, transcript_a),
         "sentiment": analyze_sentiment(transcript_a),
         "mean_pitch": calculate_pitch_stats(audio_path_a)[0],
         "std_pitch": calculate_pitch_stats(audio_path_a)[1],
+        "transcript": transcript_a,
+        "duration": _safe_duration(audio_path_a),
     }
 
     # Calculate metrics for Response B
@@ -130,6 +142,8 @@ def analyze_voices(audio_path_a, audio_path_b):
         "sentiment": analyze_sentiment(transcript_b),
         "mean_pitch": calculate_pitch_stats(audio_path_b)[0],
         "std_pitch": calculate_pitch_stats(audio_path_b)[1],
+        "transcript": transcript_b,
+        "duration": _safe_duration(audio_path_b),
     }
 
     # Calculate comparison metrics

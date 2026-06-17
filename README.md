@@ -3,6 +3,12 @@ You can interact with Hear Me Out at this link: https://testing-moshi--hearmeout
 
 **Hear Me Out** is an interactive evaluation and bias discovery platform for speech-to-speech conversational AI. These speech-to-speech models process spoken language directly from audio, without first converting it to text. They promise more natural, expressive, and emotionally aware interactions by retaining prosody, intonation, and other vocal cues throughout the conversation.
 
+> **Backend (GPU server deployment):** the current backend is three services —
+> **PersonaPlex** (:8000), **app-api** (:5001), **MeanVC** (:5002) — set up and run entirely
+> from this repo via `infra/setup.sh` + `infra/run_all.sh`. See **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**
+> for what they do and **[docs/RUNBOOK.md](docs/RUNBOOK.md)** for setup/run/deploy. The Modal
+> instructions below are the older hosted-dev path.
+
 
 ---
 The Hear Me Out block diagram

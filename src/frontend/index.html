@@ -21,15 +21,24 @@
     <!-- Opus decoder -->
     <script src="https://cdn.jsdelivr.net/npm/ogg-opus-decoder/dist/ogg-opus-decoder.min.js"></script>
       
+    <!-- PersonaPlex WebSocket URL override: set via query param or default to ws://hostname:8000/api/chat -->
+    <script>
+      const params = new URLSearchParams(window.location.search);
+      // Fallback to .env values if no query params (for direct file:// open)
+      const fallbackIP = '130.237.3.103';
+      window.__API_BASE__ = params.get('api_base') || `http://${fallbackIP}:5001`;
+      window.__PERSONAPLEX_HOST__ = params.get('personaplex_host') || fallbackIP;
+      window.__PERSONAPLEX_WS_URL__ = params.get('personaplex_ws') || params.get('moshi_ws') || null;
+      window.__VOICE_PROMPT__ = params.get('voice_prompt') || null;
+      window.__TEXT_PROMPT__ = params.get('text_prompt') || null;
+      window.__MEANVC_HOST__ = params.get('meanvc_host') || fallbackIP;
+    </script>
     <script>
       tailwind.config = {
         theme: {
           extend: {
             colors: {
-              // Dark base background color
               ground: "#0C0F0B",
-
-              // Theme colors
               primary: "#9AEE86",
               "accent-pink": "#FC9CC6",
               "accent-blue": "#B8E4FF",
