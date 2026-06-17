@@ -247,8 +247,12 @@ add_step phase_runtime "Runtime setup (SSL, entrypoints)"
 # ===========================================================================
 TUI=0
 [ "$NONINTERACTIVE" != "1" ] && [ -t 1 ] && command -v tput >/dev/null 2>&1 && TUI=1
-SETUP_LOG="$(mktemp "${TMPDIR:-/tmp}/hmo-setup.XXXXXX.log")"
-SPIN_CH=""; LIVE_LINE=""; RENDERED=0
+# Keep the full log in the directory you ran setup from (fallback to /tmp if not writable).
+INVOKE_DIR="$(pwd)"
+SETUP_LOG="$INVOKE_DIR/hmo-setup-$(date +%Y%m%d-%H%M%S).log"
+: > "$SETUP_LOG" 2>/dev/null || SETUP_LOG="$(mktemp "${TMPDIR:-/tmp}/hmo-setup.XXXXXX.log")"
+PANE_LINES=8          # how many lines of live output to show under the checklist
+SPIN_CH=""; RENDERED=0
 
 print_header() {
   echo -e "${BOLD}╭──────────────────────────────────────────────╮${NC}"
@@ -262,9 +266,11 @@ print_header() {
   echo
 }
 
-render() {  # redraw the checklist + live line in place (TUI only)
-  local i icon cols; cols=$(tput cols 2>/dev/null || echo 80)
-  [ "$RENDERED" = "1" ] && tput cuu $(( ${#STEP_FNS[@]} + 2 ))
+render() {  # redraw checklist + an N-line scrolling output pane, in place (TUI only)
+  local i icon cols j n line; local -a paneln
+  cols=$(tput cols 2>/dev/null || echo 80)
+  # Block height is constant: nsteps + 1 (pane header) + PANE_LINES.
+  [ "$RENDERED" = "1" ] && tput cuu $(( ${#STEP_FNS[@]} + 1 + PANE_LINES ))
   RENDERED=1
   for i in "${!STEP_FNS[@]}"; do
     case "${STEP_STATE[$i]}" in
@@ -275,8 +281,19 @@ render() {  # redraw the checklist + live line in place (TUI only)
     esac
     tput el; echo -e "  $icon ${STEP_LABELS[$i]}"
   done
-  tput el; echo
-  tput el; echo -e "    ${DIM}${LIVE_LINE:0:$((cols-6))}${NC}"
+  tput el; echo -e "  ${DIM}┄┄ output ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄${NC}"
+  # Last PANE_LINES of the log, sanitized; pad with blanks to keep height fixed.
+  mapfile -t paneln < <(tail -n "$PANE_LINES" "$SETUP_LOG" 2>/dev/null | tr -d '\r')
+  n=${#paneln[@]}
+  for (( j=0; j<PANE_LINES; j++ )); do
+    tput el
+    if [ "$j" -lt "$n" ]; then
+      line="$(printf '%s' "${paneln[$j]}" | tr -dc '[:print:]\t')"
+      echo -e "    ${DIM}${line:0:$((cols-6))}${NC}"
+    else
+      echo
+    fi
+  done
 }
 
 run_tui() {
@@ -290,12 +307,11 @@ run_tui() {
     pid=$!; s=0
     while kill -0 "$pid" 2>/dev/null; do
       SPIN_CH="${spin:$((s % 10)):1}"; s=$((s + 1))
-      LIVE_LINE="$(tail -n1 "$SETUP_LOG" 2>/dev/null | tr -d '\r' | tr -dc '[:print:]' || true)"
       render; sleep 0.1
     done
     rc=0; wait "$pid" || rc=$?
     [ "$rc" = "0" ] && STEP_STATE[$i]="ok" || STEP_STATE[$i]="fail"
-    SPIN_CH=""; LIVE_LINE=""; render
+    SPIN_CH=""; render
     if [ "$rc" != "0" ]; then
       tput cnorm 2>/dev/null || true
       echo; echo -e "${RED}✗ Failed: ${STEP_LABELS[$i]}${NC}  ${DIM}(last 25 log lines)${NC}"
@@ -328,5 +344,6 @@ echo -e "  ${BOLD}workspace${NC}  $WORKSPACE"
 echo -e "  ${BOLD}venv${NC}       $VENV_DIR"
 echo -e "  ${BOLD}start${NC}      cd $WORKSPACE && bash run_all.sh"
 echo -e "  ${BOLD}ports${NC}      PersonaPlex :8000   app-api :5001   MeanVC :5002"
+echo -e "  ${BOLD}log${NC}        $SETUP_LOG"
 [ -n "$HF_TOKEN" ] || echo -e "  ${YELLOW}note${NC}       HF_TOKEN was not set — rerun with a token to fetch PersonaPlex."
 echo
