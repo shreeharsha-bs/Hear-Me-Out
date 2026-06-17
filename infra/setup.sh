@@ -24,7 +24,7 @@ MODELS_DIR="$WORKSPACE/models"
 PERSONAPLEX_DIR="$WORKSPACE/personaplex"
 MEANVC_DIR="$WORKSPACE/MeanVC"
 
-REPO_URL="${REPO_URL:-https://github.com/shreeharsha-bs/Hear-Me-Out.git}"
+REPO_URL="${REPO_URL:-https://github.com/syedfahimabrar/Hear-Me-Out.git}"
 PERSONAPLEX_URL="https://github.com/NVIDIA/personaplex.git"
 MEANVC_URL="https://github.com/ASLP-lab/MeanVC.git"
 PERSONAPLEX_COMMIT="3428dfd95309a7f3c84fd93259ded0f810d1ff91"
@@ -83,7 +83,9 @@ pip install --no-cache-dir \
 # ============================================================================
 log "Phase 4/7: Cloning repositories..."
 
-[ -d "$REPO_DIR" ] && log "Hear-Me-Out exists" || git clone "$REPO_URL" "$REPO_DIR"
+[ -d "$REPO_DIR" ] && log "Hear-Me-Out exists" || git clone --recursive "$REPO_URL" "$REPO_DIR"
+# Ensure submodules (seed-vc) are present even if the repo was cloned non-recursively.
+git -C "$REPO_DIR" submodule update --init --recursive 2>/dev/null || true
 
 if [ ! -d "$PERSONAPLEX_DIR" ]; then
     log "Cloning PersonaPlex (NVIDIA)..."

@@ -9,6 +9,26 @@ You can interact with Hear Me Out at this link: https://testing-moshi--hearmeout
 > for what they do and **[docs/RUNBOOK.md](docs/RUNBOOK.md)** for setup/run/deploy. The Modal
 > instructions below are the older hosted-dev path.
 
+## Quick start — one-command backend setup (fresh GPU server)
+
+`infra/setup.sh` is self-bootstrapping: it clones the repo (with submodules), builds the venv,
+installs pinned deps, downloads all models, generates SSL, and wires up `/workspace`. Just curl
+it and run:
+
+```bash
+export HF_TOKEN=hf_xxxxx   # needs access to gated nvidia/personaplex-7b-v1
+curl -fsSL https://raw.githubusercontent.com/syedfahimabrar/Hear-Me-Out/main/infra/setup.sh -o setup.sh
+bash setup.sh
+# start all three services (PersonaPlex :8000  app-api :5001  MeanVC :5002, all SSL):
+bash /workspace/Hear-Me-Out/infra/run_all.sh
+```
+
+Use any folder by overriding `WORKSPACE` (both commands):
+`WORKSPACE=/home/jovyan/workspace bash setup.sh` then
+`WORKSPACE=/home/jovyan/workspace bash /home/jovyan/workspace/Hear-Me-Out/infra/run_all.sh`.
+Models-only refresh on an existing setup: `bash setup.sh --models-only`. Full details in
+**[docs/RUNBOOK.md](docs/RUNBOOK.md)**.
+
 
 ---
 The Hear Me Out block diagram
