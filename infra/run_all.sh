@@ -49,6 +49,7 @@ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 pkill -f "personaplex_entry" 2>/dev/null || true
 pkill -f "src.app:create_app" 2>/dev/null || true
 pkill -f "meanvc_server" 2>/dev/null || true
+pkill -f "xvc_server" 2>/dev/null || true
 sleep 2
 
 # Find Hear-Me-Out directory
@@ -93,6 +94,20 @@ fi
 echo "  Frontend: $FRONTEND_PATH"
 export FRONTEND_PATH
 
+# Prompt for the voice-conversion engine (only one runs on :5002).
+if [ -z "$VC_ENGINE" ]; then
+  echo ""
+  echo "  Which voice-conversion engine on :5002?"
+  echo "    1) MeanVC  (CPU, streaming) [default]"
+  echo "    2) X-VC    (GPU, streaming; needs xvc-venv + models from setup.sh)"
+  read -t 60 -p "  Choice [1/2]: " vc_choice < /dev/tty 2>/dev/tty || vc_choice="1"
+  case "$vc_choice" in
+    2) VC_ENGINE=xvc ;;
+    *) VC_ENGINE=meanvc ;;
+  esac
+fi
+echo "  VC engine: $VC_ENGINE"
+
 echo "=== Starting PersonaPlex (GPU) on port 8000 (SSL) ==="
 # Find personaPlex entrypoint (may be at $WORKSPACE/ or in Home)
 PERSONAPLEX_ENTRY=""
@@ -114,13 +129,33 @@ python3 -m uvicorn src.app:create_app --factory --host 0.0.0.0 --port 5001 \
     --ssl-keyfile "$SSL_DIR/key.pem" --ssl-certfile "$SSL_DIR/cert.pem" &
 PID2=$!
 
-echo "=== Starting MeanVC (streaming VC, CPU) on port 5002 (SSL) ==="
 export SSL_DIR
-export MEANVC_CKPT_DIR="$WORKSPACE/models/meanvc"
-export MEANVC_SV_CKPT="$WORKSPACE/models/meanvc-sv/wavlm_large_finetune.pth"
-export SPEAKER_VERIFICATION_ROOT="$WORKSPACE"
-python3 infra/meanvc_server.py &
-PID3=$!
+export PERSONAPLEX_PROXY_HOST="${PERSONAPLEX_PROXY_HOST:-127.0.0.1}"
+export PERSONAPLEX_PROXY_PORT="${PERSONAPLEX_PROXY_PORT:-8000}"
+if [ "$VC_ENGINE" = "xvc" ]; then
+    echo "=== Starting X-VC (streaming VC, GPU) on port 5002 (SSL) ==="
+    XVC_VENV="$WORKSPACE/xvc-venv"
+    export XVC_DIR="$WORKSPACE/X-VC"
+    if [ ! -x "$XVC_VENV/bin/python" ] || [ ! -d "$XVC_DIR" ]; then
+        echo "ERROR: X-VC not installed ($XVC_DIR / $XVC_VENV). Run setup.sh and enable the X-VC engine."
+        exit 1
+    fi
+    export XVC_CONFIG="$XVC_DIR/configs/xvc.yaml"
+    export XVC_CKPT="$XVC_DIR/ckpts/xvc.pt"
+    export MEANVC_PORT=5002
+    # Run from the X-VC repo (its config uses relative pretrained/ paths), with its own venv.
+    ( cd "$XVC_DIR" && "$XVC_VENV/bin/python" "$HEARMEOUT_DIR/infra/xvc_server.py" ) &
+    PID3=$!
+    VC_LABEL="X-VC"
+else
+    echo "=== Starting MeanVC (streaming VC, CPU) on port 5002 (SSL) ==="
+    export MEANVC_CKPT_DIR="$WORKSPACE/models/meanvc"
+    export MEANVC_SV_CKPT="$WORKSPACE/models/meanvc-sv/wavlm_large_finetune.pth"
+    export SPEAKER_VERIFICATION_ROOT="$WORKSPACE"
+    python3 infra/meanvc_server.py &
+    PID3=$!
+    VC_LABEL="MeanVC"
+fi
 
-echo "All services: PersonaPlex PID=$PID1, app-api PID=$PID2, MeanVC PID=$PID3"
+echo "All services: PersonaPlex PID=$PID1, app-api PID=$PID2, $VC_LABEL PID=$PID3"
 wait

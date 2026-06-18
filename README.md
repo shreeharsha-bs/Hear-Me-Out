@@ -37,7 +37,7 @@ The backend is three services, set up and run entirely from this repo.
 |---|---|---|---|
 | **PersonaPlex** | 8000 | GPU | Audio-native speech↔speech LM (NVIDIA `personaplex` moshi fork). Ingests audio via the Mimi codec and responds in token space — no separate ASR. WebSocket `/api/chat` (binary tags: `0x00` handshake, `0x01` Opus audio, `0x02` transcript). |
 | **app-api** | 5001 | GPU | FastAPI app — serves the built frontend + REST: `/api/transcribe` (faster-whisper), `/api/voice-conversion` (offline Seed-VC subprocess), `/api/metrics-comparison`. |
-| **MeanVC** | 5002 | CPU | Real-time streaming voice conversion + the server-side chat-proxy that converts mic audio and forwards it to PersonaPlex over localhost. |
+| **MeanVC** *or* **X-VC** | 5002 | CPU / GPU | Real-time streaming voice conversion + the server-side chat-proxy that converts mic audio and forwards it to PersonaPlex over localhost. The engine is chosen at launch via `VC_ENGINE` (MeanVC = CPU; X-VC = GPU); only one runs, on the same port/endpoints. |
 
 All run behind self-signed SSL (browser mic capture requires HTTPS), launched by `infra/run_all.sh`. On the production host they run inside a Docker container (`infra/docker_launch.sh`, reference only).
 
@@ -55,6 +55,7 @@ bash setup.sh              # prompts for workspace (default: current dir), repo,
 - **Non-interactive** (CI / `curl | bash`): pass `-y` and preset env, e.g. `HF_TOKEN=… WORKSPACE=/workspace bash setup.sh -y`.
 - **Models-only** refresh on an existing setup: `bash setup.sh --models-only`.
 - **Rootless container** (no sudo): answer **"Install system apt packages? → n"**.
+- **X-VC engine** (optional): pass `--xvc` (or answer the prompt) to also install X-VC into its own venv (X-VC pins torch 2.5.1) plus its checkpoints. Select it at run time with `VC_ENGINE=xvc`.
 
 ## Running
 
@@ -63,7 +64,7 @@ cd <workspace> && bash Hear-Me-Out/infra/run_all.sh
 # PersonaPlex :8000   app-api :5001   MeanVC :5002   (all SSL)
 ```
 
-`run_all.sh` auto-detects the workspace from its own location; override with `WORKSPACE=…`. Set `FRONTEND_CHOICE=new|old` to skip the frontend prompt.
+`run_all.sh` auto-detects the workspace from its own location; override with `WORKSPACE=…`. Set `FRONTEND_CHOICE=new|old` to skip the frontend prompt, and `VC_ENGINE=meanvc|xvc` to pick the voice-conversion engine on `:5002` (`xvc` requires the X-VC install from setup).
 
 ## Configuration
 
@@ -79,6 +80,8 @@ cd <workspace> && bash Hear-Me-Out/infra/run_all.sh
 | `SPEAKER_VERIFICATION_ROOT` | `<ws>` | MeanVC |
 | `SSL_DIR` | `<ws>/ssl` | all (TLS) |
 | `PERSONAPLEX_PROXY_HOST` / `PERSONAPLEX_PROXY_PORT` | `127.0.0.1` / `8000` | MeanVC chat-proxy → PersonaPlex |
+
+When `VC_ENGINE=xvc`, `run_all.sh` instead sets `XVC_DIR`, `XVC_CONFIG`, `XVC_CKPT`, and the streaming window `XVC_CHUNK_MS` / `XVC_CURRENT_MS` / `XVC_SMOOTH_MS` / `XVC_FUTURE_MS` (default `2400/120/20/100` ms), and runs `infra/xvc_server.py` from the `xvc-venv`.
 
 ## Deploying a change
 

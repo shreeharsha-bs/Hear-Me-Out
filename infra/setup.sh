@@ -29,11 +29,13 @@ hr()   { echo -e "${DIM}──────────────────�
 MODELS_ONLY=false
 NONINTERACTIVE="${NONINTERACTIVE:-0}"
 INSTALL_SYSTEM=true
+INSTALL_XVC="${INSTALL_XVC:-false}"
 for a in "$@"; do
   case "$a" in
     --models-only)            MODELS_ONLY=true ;;
+    --xvc)                    INSTALL_XVC=true ;;
     -y|--yes|--non-interactive) NONINTERACTIVE=1 ;;
-    -h|--help) echo "Usage: setup.sh [--models-only] [-y|--yes]"; exit 0 ;;
+    -h|--help) echo "Usage: setup.sh [--models-only] [--xvc] [-y|--yes]"; exit 0 ;;
     *) warn "Unknown arg: $a" ;;
   esac
 done
@@ -86,11 +88,16 @@ fi
 if ! $MODELS_ONLY; then
   ask_yn   INSTALL_SYSTEM "Install system apt packages? (needs sudo)"  "Y"
 fi
+if ! $MODELS_ONLY; then
+  ask_yn   INSTALL_XVC    "Also install the X-VC engine? (own venv + models, GPU)"  "N"
+fi
 
 # Fixed upstreams (not prompted)
 PERSONAPLEX_URL="https://github.com/NVIDIA/personaplex.git"
 MEANVC_URL="https://github.com/ASLP-lab/MeanVC.git"
 PERSONAPLEX_COMMIT="3428dfd95309a7f3c84fd93259ded0f810d1ff91"
+XVC_URL="https://github.com/Jerrister/X-VC.git"
+XVC_COMMIT="49df8c591eafc48b096e466d96f9839f9c0dd739"
 
 # Derived paths (after WORKSPACE is finalized). Export so the helper scripts
 # (generate-ssl.sh, download-meanvc-sv.sh) honor the chosen workspace.
@@ -101,6 +108,8 @@ VENV_DIR="$WORKSPACE/hearmeout-venv"
 MODELS_DIR="$WORKSPACE/models"
 PERSONAPLEX_DIR="$WORKSPACE/personaplex"
 MEANVC_DIR="$WORKSPACE/MeanVC"
+XVC_DIR="$WORKSPACE/X-VC"
+XVC_VENV="$WORKSPACE/xvc-venv"
 FROZEN="$REPO_DIR/infra/requirements-frozen.txt"
 
 echo; hr
@@ -109,6 +118,7 @@ echo -e "  ${BOLD}Repo${NC}         : $REPO_URL"
 echo -e "  ${BOLD}HF token${NC}     : $([ -n "$HF_TOKEN" ] && echo set || echo "${YELLOW}not set — PersonaPlex model will be skipped${NC}")"
 echo -e "  ${BOLD}Models-only${NC}  : $MODELS_ONLY"
 $MODELS_ONLY || echo -e "  ${BOLD}System pkgs${NC}  : $INSTALL_SYSTEM"
+$MODELS_ONLY || echo -e "  ${BOLD}X-VC engine${NC}  : $INSTALL_XVC"
 hr
 if [ "$NONINTERACTIVE" != "1" ]; then
   read -r -p "$(printf "${CYAN}?${NC} ${BOLD}Proceed?${NC} ${DIM}[Y/n]${NC} ")" __go
@@ -227,6 +237,50 @@ phase_runtime() {
   cp "$REPO_DIR/infra/run_all.sh" "$WORKSPACE/run_all.sh"; chmod +x "$WORKSPACE/run_all.sh"
 }
 
+phase_xvc() {
+  # X-VC live streaming engine — its OWN venv (torch 2.5.1, incompatible with the
+  # shared venv) + checkpoints. Selected at launch via VC_ENGINE=xvc in run_all.sh.
+  [ -d "$XVC_DIR" ] && echo "X-VC repo exists" || git clone "$XVC_URL" "$XVC_DIR"
+  ( cd "$XVC_DIR" && git checkout "$XVC_COMMIT" 2>/dev/null || true )
+
+  # Dedicated Python 3.10 venv (X-VC requires 3.10).
+  local PY=python3.10
+  command -v "$PY" >/dev/null 2>&1 || { echo "WARN: python3.10 not found, using python3 ($(python3 -V))"; PY=python3; }
+  [ -d "$XVC_VENV" ] || "$PY" -m venv "$XVC_VENV"
+
+  # Everything below runs inside the X-VC venv (scoped to this step's subshell).
+  source "$XVC_VENV/bin/activate"
+  pip install --upgrade pip -q
+  echo "Installing X-VC requirements (torch 2.5.1, ...)"
+  pip install --no-cache-dir -r "$XVC_DIR/requirements.txt"
+  # Extra deps our streaming server needs (Opus + aiohttp + downloaders).
+  pip install --no-cache-dir sphn aiohttp huggingface_hub modelscope
+
+  mkdir -p "$XVC_DIR/ckpts" "$XVC_DIR/pretrained"
+  # X-VC checkpoint.
+  if [ ! -f "$XVC_DIR/ckpts/xvc.pt" ]; then
+    echo "Downloading X-VC checkpoint (chenxie95/X-VC)..."
+    python -c "from huggingface_hub import hf_hub_download; import shutil; shutil.copy(hf_hub_download('chenxie95/X-VC','xvc.pt'), '$XVC_DIR/ckpts/xvc.pt'); print('xvc.pt ready')"
+  fi
+  # GLM-4-Voice-Tokenizer (semantic) — pre-cache; loaded from hf_repo at runtime.
+  python -c "from huggingface_hub import snapshot_download; snapshot_download('zai-org/glm-4-voice-tokenizer'); print('glm tokenizer cached')" \
+    || echo "WARN: glm-4-voice-tokenizer pre-cache failed (will fetch at runtime)."
+  # ERes2Net speaker encoder (modelscope) -> pretrained/speech_eres2net_sv_en_voxceleb_16k
+  local ERES="$XVC_DIR/pretrained/speech_eres2net_sv_en_voxceleb_16k"
+  if [ ! -d "$ERES" ] || [ -z "$(ls -A "$ERES" 2>/dev/null)" ]; then
+    echo "Downloading ERes2Net speaker encoder (modelscope)..."
+    python -c "
+import os, shutil
+from modelscope import snapshot_download
+p = snapshot_download('iic/speech_eres2net_sv_en_voxceleb_16k')
+os.makedirs('$ERES', exist_ok=True)
+for n in os.listdir(p):
+    s = os.path.join(p, n); d = os.path.join('$ERES', n)
+    (shutil.copytree(s, d, dirs_exist_ok=True) if os.path.isdir(s) else shutil.copy(s, d))
+print('ERes2Net ready')" || echo "WARN: ERes2Net download failed; place it at $ERES manually."
+  fi
+}
+
 # ===========================================================================
 # Build the ordered step list (label + function) from the chosen options.
 # ===========================================================================
@@ -238,6 +292,7 @@ if ! $MODELS_ONLY; then
   add_step phase_venv      "Python venv + PyTorch (cu121)"
   add_step phase_clone     "Clone repos + install moshi"
   add_step phase_deps      "Install Python dependencies"
+  $INSTALL_XVC && add_step phase_xvc "Install X-VC engine (venv + models)"
 fi
 add_step phase_models  "Download models"
 add_step phase_runtime "Runtime setup (SSL, entrypoints)"
