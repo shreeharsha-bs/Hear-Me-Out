@@ -1,0 +1,55 @@
+[project]
+name = "hearmeout-app-api"
+version = "0.1.0"
+description = "Hear-Me-Out app-api: serves the frontend + REST (transcribe, offline Seed-VC, metrics)."
+requires-python = ">=3.11,<3.12"
+dependencies = [
+    "torch==2.4.0",
+    "torchaudio==2.4.0",
+    # web
+    "fastapi==0.115.5",
+    "uvicorn[standard]==0.32.0",
+    "python-multipart==0.0.18",
+    "starlette",
+    "websockets",
+    "werkzeug",
+    # transcription + VAD
+    "faster-whisper==1.2.1",
+    "silero-vad",
+    # huggingface
+    "huggingface-hub>=0.34,<1.0",
+    "hf-transfer>=0.1.8",
+    # metrics.py (Metrics tab + voice-change modal)
+    "pyphen",
+    "audiobox-aesthetics",
+    "librosa==0.10.2",
+    "transformers",
+    "sentence-transformers==3.3.1",
+    "matplotlib",
+    "soundfile==0.12.1",
+    "numpy==1.26.4",
+    "scipy==1.13.1",
+    "safetensors>=0.5.3",
+    # Seed-VC is invoked as a subprocess via sys.executable, so it shares this venv.
+    # Core Seed-VC deps; reconcile with seed-vc/requirements.txt on first `uv lock`.
+    "descript-audio-codec==1.0.0",
+    "bigvgan",
+    "munch==4.0.0",
+    "omegaconf",
+    "einops==0.7.0",
+    "sounddevice==0.5.0",
+    "sentencepiece==0.2.0",
+    "accelerate",
+    "gdown",
+    "pydub==0.25.1",
+]
+
+# PyTorch CUDA 12.1 wheels (shared with meanvc/personaplex via uv's global cache).
+[[tool.uv.index]]
+name = "pytorch-cu121"
+url = "https://download.pytorch.org/whl/cu121"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu121" }
+torchaudio = { index = "pytorch-cu121" }

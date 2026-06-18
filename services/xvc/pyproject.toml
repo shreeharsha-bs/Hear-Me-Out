@@ -1,0 +1,52 @@
+[project]
+name = "hearmeout-xvc"
+version = "0.1.0"
+description = "Hear-Me-Out X-VC: streaming voice conversion engine (GPU). Runs against the cloned X-VC repo (added to sys.path); this declares its Python deps."
+# X-VC requires Python 3.10.
+requires-python = ">=3.10,<3.11"
+dependencies = [
+    # From X-VC requirements.txt (pinned).
+    "torch==2.5.1",
+    "torchvision==0.20.1",
+    "torchaudio==2.5.1",
+    "transformers==4.44.1",
+    "deepspeed==0.14.4",
+    "einops==0.8.0",
+    "einx==0.3.0",
+    "x-transformers==1.40.2",
+    "hydra-core==1.3.2",
+    "julius==0.2.7",
+    "librosa==0.10.2",
+    "matplotlib==3.7.5",
+    "numpy==1.26.4",
+    "omegaconf==2.3.0",
+    "scipy==1.12.0",
+    "soundfile==0.12.1",
+    "soxr==0.3.7",
+    "tqdm==4.66.5",
+    "wandb==0.18.5",
+    "torchmetrics==1.8.0",
+    "pesq==0.0.4",
+    "torchcrepe==0.0.23",
+    "ema-pytorch==0.7.7",
+    "packaging==24.2",
+    "lightning==2.2.4",
+    "gdown==5.1.0",
+    "tensorboard==2.20.0",
+    "descript-audiotools==0.7.2",
+    # Added for our streaming server (Opus + proxy + model downloads).
+    "sphn>=0.1.4",
+    "aiohttp>=3.10",
+    "huggingface-hub",
+    "modelscope",
+]
+
+[[tool.uv.index]]
+name = "pytorch-cu121"
+url = "https://download.pytorch.org/whl/cu121"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu121" }
+torchvision = { index = "pytorch-cu121" }
+torchaudio = { index = "pytorch-cu121" }

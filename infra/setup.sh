@@ -1,12 +1,14 @@
 #!/bin/bash
 # ============================================================================
-# Hear-Me-Out: setup for a fresh Ubuntu 22.04 GPU server
-# Stands up all services (PersonaPlex, app-api, MeanVC) under a workspace folder.
+# Hear-Me-Out: setup for a fresh Ubuntu 22.04 GPU server (uv per-service).
+# Stands up PersonaPlex, app-api, MeanVC (+ optional X-VC) under a workspace,
+# each as its own uv project (own venv/Python/torch).
 #
-# Interactive:  bash infra/setup.sh            # prompts for workspace, repo, HF token, etc.
+# Interactive:  bash infra/setup.sh
 # Non-interactive / CI / curl | bash:
 #               HF_TOKEN=hf_xxx WORKSPACE=/workspace bash infra/setup.sh -y
 # Models-only (existing setup): bash infra/setup.sh --models-only
+# Include X-VC engine:          bash infra/setup.sh --xvc
 #
 # All prompts have defaults (env vars override them); no TTY => uses defaults.
 # ============================================================================
@@ -21,10 +23,6 @@ hr()   { echo -e "${DIM}──────────────────�
 
 # ---------------------------------------------------------------------------
 # Args + interactive config
-#   Flags: --models-only   (skip system/venv/repo/deps, just download models)
-#          -y | --yes      (non-interactive: accept all defaults / env vars)
-#   Any value can be preset via env (WORKSPACE=, REPO_URL=, HF_TOKEN=) and is
-#   shown as the default. With no TTY (e.g. curl | bash) prompts are skipped.
 # ---------------------------------------------------------------------------
 MODELS_ONLY=false
 NONINTERACTIVE="${NONINTERACTIVE:-0}"
@@ -74,7 +72,6 @@ echo -e "${BOLD}╰────────────────────�
 [ "$NONINTERACTIVE" = "1" ] && log "Non-interactive: using defaults / env values." || echo -e "${DIM}Press Enter to accept the [default].${NC}"
 echo
 
-# Defaults (overridable via env), then prompt for each.
 # Workspace defaults to the current directory — cd into your target folder first.
 WORKSPACE="${WORKSPACE:-$(pwd)}"
 REPO_URL="${REPO_URL:-https://github.com/syedfahimabrar/Hear-Me-Out.git}"
@@ -83,34 +80,29 @@ ask        WORKSPACE "Workspace directory" "$WORKSPACE"
 ask        REPO_URL  "Git repo URL"        "$REPO_URL"
 ask_secret HF_TOKEN  "Hugging Face token (gated PersonaPlex model)"
 if ! $MODELS_ONLY; then
-  ask_yn   MODELS_ONLY    "Models-only? (skip system/venv/repo/deps)"  "N"
+  ask_yn   MODELS_ONLY    "Models-only? (skip system/clones/deps)"      "N"
 fi
 if ! $MODELS_ONLY; then
-  ask_yn   INSTALL_SYSTEM "Install system apt packages? (needs sudo)"  "Y"
+  ask_yn   INSTALL_SYSTEM "Install system apt packages? (needs sudo)"   "Y"
 fi
 if ! $MODELS_ONLY; then
-  ask_yn   INSTALL_XVC    "Also install the X-VC engine? (own venv + models, GPU)"  "N"
+  ask_yn   INSTALL_XVC    "Also install the X-VC engine? (own venv, GPU)" "N"
 fi
 
 # Fixed upstreams (not prompted)
-PERSONAPLEX_URL="https://github.com/NVIDIA/personaplex.git"
-MEANVC_URL="https://github.com/ASLP-lab/MeanVC.git"
-PERSONAPLEX_COMMIT="3428dfd95309a7f3c84fd93259ded0f810d1ff91"
+MEANVC_URL="https://github.com/ASLP-lab/MeanVC.git"   # cloned for its speaker_verification source
 XVC_URL="https://github.com/Jerrister/X-VC.git"
 XVC_COMMIT="49df8c591eafc48b096e466d96f9839f9c0dd739"
 
-# Derived paths (after WORKSPACE is finalized). Export so the helper scripts
-# (generate-ssl.sh, download-meanvc-sv.sh) honor the chosen workspace.
+# Derived paths. Export so helper scripts (generate-ssl.sh, download-meanvc-sv.sh)
+# and `uv run` downloads honor the chosen workspace.
 export WORKSPACE
 export HF_TOKEN
 REPO_DIR="$WORKSPACE/Hear-Me-Out"
-VENV_DIR="$WORKSPACE/hearmeout-venv"
 MODELS_DIR="$WORKSPACE/models"
-PERSONAPLEX_DIR="$WORKSPACE/personaplex"
 MEANVC_DIR="$WORKSPACE/MeanVC"
 XVC_DIR="$WORKSPACE/X-VC"
-XVC_VENV="$WORKSPACE/xvc-venv"
-FROZEN="$REPO_DIR/infra/requirements-frozen.txt"
+SERVICES="$REPO_DIR/services"
 
 echo; hr
 echo -e "  ${BOLD}Workspace${NC}    : $WORKSPACE"
@@ -125,20 +117,17 @@ if [ "$NONINTERACTIVE" != "1" ]; then
   case "${__go:-Y}" in [Yy]*) ;; *) err "Aborted by user." ;; esac
 fi
 
-$MODELS_ONLY && [ ! -f "$VENV_DIR/bin/activate" ] && err "venv not found at $VENV_DIR (run full setup first)."
+$MODELS_ONLY && [ ! -d "$SERVICES/app_api/.venv" ] && err "services not synced (run full setup first)."
 
 # ===========================================================================
-# Phase functions. Each is self-contained and re-activates the venv so it can
-# run as a backgrounded step under the TUI without losing the environment.
+# Phase functions. Each is self-contained (no shared venv); they run as
+# backgrounded steps under the TUI. Per-service deps come from `uv sync`.
 # ===========================================================================
-_venv() { [ -f "$VENV_DIR/bin/activate" ] && source "$VENV_DIR/bin/activate"; }
-
 phase_system() {
   export DEBIAN_FRONTEND=noninteractive
   sudo apt-get update -qq
   sudo apt-get install -y -qq --no-install-recommends \
       build-essential pkg-config git wget curl ca-certificates \
-      python3 python3-dev python3-pip python3-venv \
       ffmpeg libsndfile1 libopus-dev libsoxr-dev openssl nodejs npm
 }
 
@@ -149,127 +138,65 @@ phase_workspace() {
   mkdir -p "$MODELS_DIR"/{seed-vc,meanvc,meanvc-sv}
 }
 
-phase_venv() {
-  python3 -m venv "$VENV_DIR"
-  source "$VENV_DIR/bin/activate"
-  pip install --upgrade pip -q
-  echo "Installing PyTorch 2.4.0 (cu121)..."
-  pip install --no-cache-dir torch==2.4.0 torchaudio==2.4.0 \
-      --index-url https://download.pytorch.org/whl/cu121
-}
-
 phase_clone() {
-  _venv
+  # Hear-Me-Out (with the seed-vc submodule).
   [ -d "$REPO_DIR" ] && echo "Hear-Me-Out exists" || git clone --recursive "$REPO_URL" "$REPO_DIR"
   git -C "$REPO_DIR" submodule update --init --recursive 2>/dev/null || true
-  if [ ! -d "$PERSONAPLEX_DIR" ]; then
-    echo "Cloning PersonaPlex (NVIDIA)..."
-    git clone "$PERSONAPLEX_URL" "$PERSONAPLEX_DIR"
-    ( cd "$PERSONAPLEX_DIR" && git checkout "$PERSONAPLEX_COMMIT" )
-  fi
-  echo "Installing moshi (editable) from PersonaPlex..."
-  pip install --no-cache-dir -e "$PERSONAPLEX_DIR/moshi"
+  # MeanVC — cloned only for its speaker_verification source (copied in phase_runtime).
   [ -d "$MEANVC_DIR" ] && echo "MeanVC exists" || git clone "$MEANVC_URL" "$MEANVC_DIR"
+  # X-VC — cloned + run from source by services/xvc/server.py (added to sys.path).
+  if $INSTALL_XVC; then
+    [ -d "$XVC_DIR" ] && echo "X-VC exists" || git clone "$XVC_URL" "$XVC_DIR"
+    ( cd "$XVC_DIR" && git checkout "$XVC_COMMIT" 2>/dev/null || true )
+    mkdir -p "$XVC_DIR/ckpts" "$XVC_DIR/pretrained"
+  fi
+  # PersonaPlex's moshi is NOT cloned — services/personaplex pulls it via uv git source.
 }
 
-phase_deps() {
-  _venv
-  if [ -f "$FROZEN" ]; then
-    echo "Installing pinned deps from infra/requirements-frozen.txt..."
-    pip install --no-cache-dir -r "$FROZEN"
-  else
-    echo "Installing curated dependency set..."
-    # safetensors>=0.5.3 is required by audiobox_aesthetics; moshi *declares* <0.5
-    # but that's cosmetic (load API/format stable 0.4-0.8). pyphen + audiobox power
-    # tools/metrics.py (Metrics tab + voice-change modal).
-    pip install --no-cache-dir \
-        numpy==1.26.4 scipy==1.13.1 einops==0.7.0 \
-        "safetensors>=0.5.3" sentencepiece==0.2.0 \
-        sounddevice==0.5.0 soundfile==0.12.1 "sphn>=0.1.4" \
-        "huggingface-hub>=0.34" "hf-transfer>=0.1.8" \
-        transformers sentence-transformers==3.3.1 accelerate \
-        librosa==0.10.2 pydub==0.25.1 munch==4.0.0 \
-        descript-audio-codec==1.0.0 bigvgan silero-vad \
-        fastapi==0.115.5 "uvicorn[standard]==0.32.0" \
-        python-multipart==0.0.18 starlette websockets \
-        "aiohttp>=3.10" omegaconf matplotlib pyphen audiobox_aesthetics werkzeug gdown
-    echo "Installing seed-vc dependencies..."
-    pip install --no-cache-dir -r "$REPO_DIR/seed-vc/requirements.txt" || true
-    pip freeze > "$FROZEN"
-    echo "Lockfile written to infra/requirements-frozen.txt (commit it to pin versions)."
+phase_sync() {
+  # Each service resolves into its own venv (uv picks the right Python + torch).
+  echo "uv sync: app_api ..."      ; ( cd "$SERVICES/app_api"     && uv sync )
+  echo "uv sync: meanvc ..."       ; ( cd "$SERVICES/meanvc"      && uv sync )
+  echo "uv sync: personaplex (pulls moshi from git) ..." ; ( cd "$SERVICES/personaplex" && uv sync )
+  if $INSTALL_XVC; then
+    echo "uv sync: xvc (py3.10, torch 2.5.1) ..." ; ( cd "$SERVICES/xvc" && uv sync )
   fi
 }
 
 phase_models() {
-  _venv
+  local APP="uv run --project $SERVICES/app_api python"
   if [ -n "$HF_TOKEN" ]; then
     echo "Downloading PersonaPlex-7B model (10-20 min)..."
-    python3 -c "from huggingface_hub import snapshot_download, hf_hub_download; snapshot_download('nvidia/personaplex-7b-v1'); hf_hub_download('nvidia/personaplex-7b-v1','voices.tgz'); print('PersonaPlex model ready.')"
+    $APP -c "from huggingface_hub import snapshot_download, hf_hub_download; snapshot_download('nvidia/personaplex-7b-v1'); hf_hub_download('nvidia/personaplex-7b-v1','voices.tgz'); print('PersonaPlex model ready.')"
   else
     echo "WARN: HF_TOKEN not set — skipping gated PersonaPlex model."
-    echo "      Accept license at https://huggingface.co/nvidia/personaplex-7b-v1 then rerun with a token."
   fi
   local SEEDVC_CKPT="$MODELS_DIR/seed-vc/DiT_uvit_tat_xlsr_ema.pth"
   if [ ! -f "$SEEDVC_CKPT" ]; then
     echo "Downloading Seed-VC checkpoint..."
-    python3 -c "from huggingface_hub import hf_hub_download; import shutil; shutil.copy(hf_hub_download('Plachta/Seed-VC','DiT_uvit_tat_xlsr_ema.pth'),'$SEEDVC_CKPT'); print('Seed-VC checkpoint ready.')"
+    $APP -c "from huggingface_hub import hf_hub_download; import shutil; shutil.copy(hf_hub_download('Plachta/Seed-VC','DiT_uvit_tat_xlsr_ema.pth'),'$SEEDVC_CKPT'); print('Seed-VC checkpoint ready.')"
   else echo "Seed-VC checkpoint present."; fi
   local model
   for model in meanvc_200ms.pt fastu2++.pt model_200ms.safetensors vocos.pt; do
     if [ ! -f "$MODELS_DIR/meanvc/$model" ]; then
       echo "Downloading MeanVC: $model..."
-      python3 -c "from huggingface_hub import hf_hub_download; import shutil; shutil.copy(hf_hub_download('ASLP-lab/MeanVC','$model'),'$MODELS_DIR/meanvc/$model')"
+      $APP -c "from huggingface_hub import hf_hub_download; import shutil; shutil.copy(hf_hub_download('ASLP-lab/MeanVC','$model'),'$MODELS_DIR/meanvc/$model')"
     fi
   done
   echo "MeanVC checkpoints ready."
-  bash "$REPO_DIR/infra/download-meanvc-sv.sh" || echo "WARN: SV model download failed; place wavlm_large_finetune.pth in $MODELS_DIR/meanvc-sv/ manually."
-}
+  uv run --project "$SERVICES/app_api" bash "$REPO_DIR/infra/download-meanvc-sv.sh" \
+    || echo "WARN: SV model download failed; place wavlm_large_finetune.pth in $MODELS_DIR/meanvc-sv/ manually."
 
-phase_runtime() {
-  if ! $MODELS_ONLY; then
-    mkdir -p "$WORKSPACE/src/runtime/speaker_verification"
-    cp "$MEANVC_DIR/src/runtime/speaker_verification/"*.py \
-       "$WORKSPACE/src/runtime/speaker_verification/" 2>/dev/null || true
-    touch "$WORKSPACE/src/__init__.py" "$WORKSPACE/src/runtime/__init__.py"
-  fi
-  bash "$REPO_DIR/infra/generate-ssl.sh" || true
-  cp "$REPO_DIR/infra/personaplex_entrypoint.py" "$WORKSPACE/personaplex_entry.py"; chmod +x "$WORKSPACE/personaplex_entry.py"
-  cp "$REPO_DIR/infra/run_all.sh" "$WORKSPACE/run_all.sh"; chmod +x "$WORKSPACE/run_all.sh"
-}
-
-phase_xvc() {
-  # X-VC live streaming engine — its OWN venv (torch 2.5.1, incompatible with the
-  # shared venv) + checkpoints. Selected at launch via VC_ENGINE=xvc in run_all.sh.
-  [ -d "$XVC_DIR" ] && echo "X-VC repo exists" || git clone "$XVC_URL" "$XVC_DIR"
-  ( cd "$XVC_DIR" && git checkout "$XVC_COMMIT" 2>/dev/null || true )
-
-  # Dedicated Python 3.10 venv (X-VC requires 3.10).
-  local PY=python3.10
-  command -v "$PY" >/dev/null 2>&1 || { echo "WARN: python3.10 not found, using python3 ($(python3 -V))"; PY=python3; }
-  [ -d "$XVC_VENV" ] || "$PY" -m venv "$XVC_VENV"
-
-  # Everything below runs inside the X-VC venv (scoped to this step's subshell).
-  source "$XVC_VENV/bin/activate"
-  pip install --upgrade pip -q
-  echo "Installing X-VC requirements (torch 2.5.1, ...)"
-  pip install --no-cache-dir -r "$XVC_DIR/requirements.txt"
-  # Extra deps our streaming server needs (Opus + aiohttp + downloaders).
-  pip install --no-cache-dir sphn aiohttp huggingface_hub modelscope
-
-  mkdir -p "$XVC_DIR/ckpts" "$XVC_DIR/pretrained"
-  # X-VC checkpoint.
-  if [ ! -f "$XVC_DIR/ckpts/xvc.pt" ]; then
-    echo "Downloading X-VC checkpoint (chenxie95/X-VC)..."
-    python -c "from huggingface_hub import hf_hub_download; import shutil; shutil.copy(hf_hub_download('chenxie95/X-VC','xvc.pt'), '$XVC_DIR/ckpts/xvc.pt'); print('xvc.pt ready')"
-  fi
-  # GLM-4-Voice-Tokenizer (semantic) — pre-cache; loaded from hf_repo at runtime.
-  python -c "from huggingface_hub import snapshot_download; snapshot_download('zai-org/glm-4-voice-tokenizer'); print('glm tokenizer cached')" \
-    || echo "WARN: glm-4-voice-tokenizer pre-cache failed (will fetch at runtime)."
-  # ERes2Net speaker encoder (modelscope) -> pretrained/speech_eres2net_sv_en_voxceleb_16k
-  local ERES="$XVC_DIR/pretrained/speech_eres2net_sv_en_voxceleb_16k"
-  if [ ! -d "$ERES" ] || [ -z "$(ls -A "$ERES" 2>/dev/null)" ]; then
-    echo "Downloading ERes2Net speaker encoder (modelscope)..."
-    python -c "
+  if $INSTALL_XVC; then
+    local XVCP="uv run --project $SERVICES/xvc python"
+    [ -f "$XVC_DIR/ckpts/xvc.pt" ] || { echo "Downloading X-VC checkpoint..."; \
+      $XVCP -c "from huggingface_hub import hf_hub_download; import shutil; shutil.copy(hf_hub_download('chenxie95/X-VC','xvc.pt'),'$XVC_DIR/ckpts/xvc.pt'); print('xvc.pt ready')"; }
+    $XVCP -c "from huggingface_hub import snapshot_download; snapshot_download('zai-org/glm-4-voice-tokenizer'); print('glm tokenizer cached')" \
+      || echo "WARN: glm tokenizer pre-cache failed (fetched at runtime)."
+    local ERES="$XVC_DIR/pretrained/speech_eres2net_sv_en_voxceleb_16k"
+    if [ ! -d "$ERES" ] || [ -z "$(ls -A "$ERES" 2>/dev/null)" ]; then
+      echo "Downloading ERes2Net speaker encoder (modelscope)..."
+      $XVCP -c "
 import os, shutil
 from modelscope import snapshot_download
 p = snapshot_download('iic/speech_eres2net_sv_en_voxceleb_16k')
@@ -278,35 +205,44 @@ for n in os.listdir(p):
     s = os.path.join(p, n); d = os.path.join('$ERES', n)
     (shutil.copytree(s, d, dirs_exist_ok=True) if os.path.isdir(s) else shutil.copy(s, d))
 print('ERes2Net ready')" || echo "WARN: ERes2Net download failed; place it at $ERES manually."
+    fi
   fi
 }
 
+phase_runtime() {
+  if ! $MODELS_ONLY; then
+    # MeanVC runtime imports src.runtime.speaker_verification (SPEAKER_VERIFICATION_ROOT=$WORKSPACE).
+    mkdir -p "$WORKSPACE/src/runtime/speaker_verification"
+    cp "$MEANVC_DIR/src/runtime/speaker_verification/"*.py \
+       "$WORKSPACE/src/runtime/speaker_verification/" 2>/dev/null || true
+    touch "$WORKSPACE/src/__init__.py" "$WORKSPACE/src/runtime/__init__.py"
+  fi
+  bash "$REPO_DIR/infra/generate-ssl.sh" || true
+}
+
 # ===========================================================================
-# Build the ordered step list (label + function) from the chosen options.
+# Build the ordered step list from the chosen options.
 # ===========================================================================
 STEP_FNS=(); STEP_LABELS=(); STEP_STATE=()
 add_step() { STEP_FNS+=("$1"); STEP_LABELS+=("$2"); STEP_STATE+=("pending"); }
 if ! $MODELS_ONLY; then
   $INSTALL_SYSTEM && add_step phase_system "Install system packages"
   add_step phase_workspace "Create workspace"
-  add_step phase_venv      "Python venv + PyTorch (cu121)"
-  add_step phase_clone     "Clone repos + install moshi"
-  add_step phase_deps      "Install Python dependencies"
-  $INSTALL_XVC && add_step phase_xvc "Install X-VC engine (venv + models)"
+  add_step phase_clone     "Clone repos + submodules"
+  add_step phase_sync      "Resolve per-service deps (uv sync)"
 fi
 add_step phase_models  "Download models"
-add_step phase_runtime "Runtime setup (SSL, entrypoints)"
+add_step phase_runtime "Runtime setup (SSL, speaker-verification)"
 
 # ===========================================================================
 # Renderer + runner. TUI = fixed header + in-place checklist; otherwise plain.
 # ===========================================================================
 TUI=0
 [ "$NONINTERACTIVE" != "1" ] && [ -t 1 ] && command -v tput >/dev/null 2>&1 && TUI=1
-# Keep the full log in the directory you ran setup from (fallback to /tmp if not writable).
 INVOKE_DIR="$(pwd)"
 SETUP_LOG="$INVOKE_DIR/hmo-setup-$(date +%Y%m%d-%H%M%S).log"
 : > "$SETUP_LOG" 2>/dev/null || SETUP_LOG="$(mktemp "${TMPDIR:-/tmp}/hmo-setup.XXXXXX.log")"
-PANE_LINES=8          # how many lines of live output to show under the checklist
+PANE_LINES=8
 SPIN_CH=""; RENDERED=0
 
 print_header() {
@@ -324,7 +260,6 @@ print_header() {
 render() {  # redraw checklist + an N-line scrolling output pane, in place (TUI only)
   local i icon cols j n line; local -a paneln
   cols=$(tput cols 2>/dev/null || echo 80)
-  # Block height is constant: nsteps + 1 (pane header) + PANE_LINES.
   [ "$RENDERED" = "1" ] && tput cuu $(( ${#STEP_FNS[@]} + 1 + PANE_LINES ))
   RENDERED=1
   for i in "${!STEP_FNS[@]}"; do
@@ -337,7 +272,6 @@ render() {  # redraw checklist + an N-line scrolling output pane, in place (TUI 
     tput el; echo -e "  $icon ${STEP_LABELS[$i]}"
   done
   tput el; echo -e "  ${DIM}┄┄ output ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄${NC}"
-  # Last PANE_LINES of the log, sanitized; pad with blanks to keep height fixed.
   mapfile -t paneln < <(tail -n "$PANE_LINES" "$SETUP_LOG" 2>/dev/null | tr -d '\r')
   n=${#paneln[@]}
   for (( j=0; j<PANE_LINES; j++ )); do
@@ -390,15 +324,23 @@ run_plain() {
 # Prime sudo before the TUI hides output, so any password prompt is visible now.
 if ! $MODELS_ONLY && $INSTALL_SYSTEM; then sudo -v 2>/dev/null || true; fi
 
+# Ensure uv is available (in the main shell, so every step subshell inherits it).
+if ! command -v uv >/dev/null 2>&1; then
+  log "Installing uv..."
+  curl -LsSf https://astral.sh/uv/install.sh | sh
+fi
+export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
+command -v uv >/dev/null 2>&1 || err "uv not found on PATH after install."
+
 echo
 if [ "$TUI" = "1" ]; then run_tui; else run_plain; fi
 
 echo
 echo -e "${GREEN}✓ Setup complete!${NC}"
 echo -e "  ${BOLD}workspace${NC}  $WORKSPACE"
-echo -e "  ${BOLD}venv${NC}       $VENV_DIR"
-echo -e "  ${BOLD}start${NC}      cd $WORKSPACE && bash run_all.sh"
-echo -e "  ${BOLD}ports${NC}      PersonaPlex :8000   app-api :5001   MeanVC :5002"
+echo -e "  ${BOLD}deps${NC}       per-service uv envs under services/*/.venv"
+echo -e "  ${BOLD}start${NC}      bash $REPO_DIR/infra/run_all.sh"
+echo -e "  ${BOLD}ports${NC}      PersonaPlex :8000   app-api :5001   MeanVC/X-VC :5002"
 echo -e "  ${BOLD}log${NC}        $SETUP_LOG"
 [ -n "$HF_TOKEN" ] || echo -e "  ${YELLOW}note${NC}       HF_TOKEN was not set — rerun with a token to fetch PersonaPlex."
 echo

@@ -1,161 +1,118 @@
 #!/bin/bash
-# Hear-Me-Out: Start all 3 services with SSL
-# Works in both Docker containers and JupyterLab
+# Hear-Me-Out: launch all services with SSL (uv per-service).
+#   PersonaPlex :8000 (GPU)   app-api :5001 (GPU)   MeanVC|X-VC :5002
+# Each service runs in its own uv project venv (uv run --project / from its dir).
+# Override the workspace with WORKSPACE=/dir; pick the VC engine with VC_ENGINE=meanvc|xvc.
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" 2>/dev/null && pwd)"
-# Workspace root. Defaults to the repo's parent dir (this script lives at
-# <workspace>/Hear-Me-Out/infra/run_all.sh), so it matches whatever setup.sh built.
-# Override with WORKSPACE=/your/dir.
+# Defaults to the repo's parent (this script lives at <workspace>/Hear-Me-Out/infra/run_all.sh).
 WORKSPACE="${WORKSPACE:-$(cd "$SCRIPT_DIR/../.." 2>/dev/null && pwd || echo /workspace)}"
-VENV_DIR=""
 
-# Find venv
-if [ -d "$WORKSPACE/hearmeout-venv/bin" ]; then
-    VENV_DIR="$WORKSPACE/hearmeout-venv"
-elif [ -d "$HOME/hearmeout-venv/bin" ]; then
-    VENV_DIR="$HOME/hearmeout-venv"
-else
-    echo "ERROR: No venv found"
-    exit 1
-fi
+GREEN='\033[0;32m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'; BOLD='\033[1m'; DIM='\033[2m'; NC='\033[0m'
 
-source "$VENV_DIR/bin/activate"
+echo
+echo -e "${BOLD}╭──────────────────────────────────────────────╮${NC}"
+echo -e "${BOLD}│        Hear-Me-Out — starting services       │${NC}"
+echo -e "${BOLD}╰──────────────────────────────────────────────╯${NC}"
+echo -e "  ${DIM}workspace${NC}  $WORKSPACE"
 
-# Auto-fix huggingface-hub
-python3 -c "from packaging.version import parse; from importlib.metadata import version; v=version('huggingface-hub'); exit(0 if parse(v) >= parse('0.34') else 1)" 2>/dev/null || {
-    pip install --force-reinstall --no-deps "huggingface-hub>=0.34,<1.0" -q
-}
+# uv must be present (provisions each service's venv).
+export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
+command -v uv >/dev/null 2>&1 || { echo -e "${YELLOW}ERROR:${NC} uv not found — run infra/setup.sh first."; exit 1; }
 
-# Generate SSL certs if missing
+# Locate the repo.
+if [ -d "$WORKSPACE/Hear-Me-Out" ]; then HEARMEOUT_DIR="$WORKSPACE/Hear-Me-Out"
+elif [ -d "$HOME/Hear-Me-Out" ]; then HEARMEOUT_DIR="$HOME/Hear-Me-Out"
+else HEARMEOUT_DIR="$(cd "$SCRIPT_DIR/.." 2>/dev/null && pwd)"; fi
+SERVICES="$HEARMEOUT_DIR/services"
+
+# SSL certs (browser mic capture needs HTTPS).
 SSL_DIR=""
 for d in "$WORKSPACE/ssl" "$SCRIPT_DIR/ssl" "$HOME/ssl"; do
-    if [ -f "$d/cert.pem" ] && [ -f "$d/key.pem" ]; then
-        SSL_DIR="$d"
-        break
-    fi
+    if [ -f "$d/cert.pem" ] && [ -f "$d/key.pem" ]; then SSL_DIR="$d"; break; fi
 done
 if [ -z "$SSL_DIR" ]; then
     mkdir -p "$WORKSPACE/ssl"
     openssl req -x509 -newkey rsa:2048 -keyout "$WORKSPACE/ssl/key.pem" -out "$WORKSPACE/ssl/cert.pem" \
         -days 365 -nodes -subj "/CN=*" -addext "subjectAltName=IP:0.0.0.0" 2>/dev/null
     SSL_DIR="$WORKSPACE/ssl"
-    echo "Generated SSL certs in $SSL_DIR"
+    echo -e "  ${DIM}ssl${NC}        generated in $SSL_DIR"
+fi
+
+# Frontend is always the Vite build; build it if missing.
+FRONTEND_PATH="$HEARMEOUT_DIR/frontend/dist"
+if [ ! -d "$FRONTEND_PATH" ]; then
+    echo -e "  ${DIM}frontend${NC}   dist missing — building..."
+    bash "$HEARMEOUT_DIR/infra/build-frontend.sh" || echo -e "  ${YELLOW}WARN:${NC} frontend build failed"
+fi
+echo -e "  ${DIM}frontend${NC}   $FRONTEND_PATH"
+
+# Pick the voice-conversion engine (only one runs on :5002).
+if [ -z "$VC_ENGINE" ]; then
+  echo ""
+  echo "  Which voice-conversion engine on :5002?"
+  echo "    1) MeanVC  (CPU, streaming) [default]"
+  echo "    2) X-VC    (GPU, streaming; needs the X-VC install from setup.sh)"
+  read -t 60 -p "  Choice [1/2]: " vc_choice < /dev/tty 2>/dev/tty || vc_choice="1"
+  case "$vc_choice" in 2) VC_ENGINE=xvc ;; *) VC_ENGINE=meanvc ;; esac
 fi
 
 export HF_HUB_ENABLE_HF_TRANSFER=1
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
-# Kill stale services
-pkill -f "personaplex_entry" 2>/dev/null || true
-pkill -f "src.app:create_app" 2>/dev/null || true
-pkill -f "meanvc_server" 2>/dev/null || true
-pkill -f "xvc_server" 2>/dev/null || true
+# Kill stale services.
+pkill -f "personaplex/entrypoint" 2>/dev/null || true
+pkill -f "app:create_app" 2>/dev/null || true
+pkill -f "meanvc/server.py" 2>/dev/null || true
+pkill -f "xvc/server.py" 2>/dev/null || true
 sleep 2
 
-# Find Hear-Me-Out directory
-if [ -d "$WORKSPACE/Hear-Me-Out" ]; then
-    HEARMEOUT_DIR="$WORKSPACE/Hear-Me-Out"
-elif [ -d "$HOME/Hear-Me-Out" ]; then
-    HEARMEOUT_DIR="$HOME/Hear-Me-Out"
-else
-    HEARMEOUT_DIR="$SCRIPT_DIR"
-fi
-
-# Prompt for frontend selection
-if [ -z "$FRONTEND_CHOICE" ]; then
-  echo ""
-  echo "  Which frontend UI to serve?"
-  echo "    1) New (Vite) [default]"
-  echo "    2) Old (original)"
-  read -t 60 -p "  Choice [1/2]: " choice < /dev/tty 2>/dev/tty || choice="1"
-  case "$choice" in
-    2) FRONTEND_PATH="$HEARMEOUT_DIR/src/frontend" ;;
-    *) FRONTEND_PATH="$HEARMEOUT_DIR/frontend/dist" ;;
-  esac
-else
-  case "$FRONTEND_CHOICE" in
-    old) FRONTEND_PATH="$HEARMEOUT_DIR/src/frontend" ;;
-    *)   FRONTEND_PATH="$HEARMEOUT_DIR/frontend/dist" ;;
-  esac
-fi
-
-# Auto-build Vite if dist missing
-if [ ! -d "$FRONTEND_PATH" ] && [[ "$FRONTEND_PATH" == */frontend/dist ]]; then
-  echo "  Vite dist not found, building..."
-  cd "$HEARMEOUT_DIR/frontend"
-  [ ! -d node_modules ] && echo "  Installing frontend dependencies..." && npm install
-  npm run build 2>/dev/null || {
-    echo "  Build failed, falling back to old frontend"
-    FRONTEND_PATH="$HEARMEOUT_DIR/src/frontend"
-  }
-  cd "$HEARMEOUT_DIR"
-fi
-
-echo "  Frontend: $FRONTEND_PATH"
-export FRONTEND_PATH
-
-# Prompt for the voice-conversion engine (only one runs on :5002).
-if [ -z "$VC_ENGINE" ]; then
-  echo ""
-  echo "  Which voice-conversion engine on :5002?"
-  echo "    1) MeanVC  (CPU, streaming) [default]"
-  echo "    2) X-VC    (GPU, streaming; needs xvc-venv + models from setup.sh)"
-  read -t 60 -p "  Choice [1/2]: " vc_choice < /dev/tty 2>/dev/tty || vc_choice="1"
-  case "$vc_choice" in
-    2) VC_ENGINE=xvc ;;
-    *) VC_ENGINE=meanvc ;;
-  esac
-fi
-echo "  VC engine: $VC_ENGINE"
-
-echo "=== Starting PersonaPlex (GPU) on port 8000 (SSL) ==="
-# Find personaPlex entrypoint (may be at $WORKSPACE/ or in Home)
-PERSONAPLEX_ENTRY=""
-for p in "$WORKSPACE/personaplex_entry.py" "$HOME/personaplex_entry.py" \
-         "$SCRIPT_DIR/personaplex_entrypoint.py" "$SCRIPT_DIR/personaplex_entry.py"; do
-    if [ -f "$p" ]; then PERSONAPLEX_ENTRY="$p"; break; fi
-done
-if [ -z "$PERSONAPLEX_ENTRY" ]; then
-    echo "ERROR: personaplex_entry.py not found"; exit 1
-fi
-python3 "$PERSONAPLEX_ENTRY" --host 0.0.0.0 --port 8000 --device cuda --ssl "$SSL_DIR" &
-PID1=$!
-
-cd "$HEARMEOUT_DIR"
-
-echo "=== Starting app-api (FastAPI: frontend + REST + offline seed-vc, GPU) on port 5001 (SSL) ==="
-WHISPER_MODEL="${WHISPER_MODEL:-small}"
-python3 -m uvicorn src.app:create_app --factory --host 0.0.0.0 --port 5001 \
-    --ssl-keyfile "$SSL_DIR/key.pem" --ssl-certfile "$SSL_DIR/cert.pem" &
-PID2=$!
-
-export SSL_DIR
+# Shared env consumed by the service processes.
+export FRONTEND_PATH SSL_DIR
+export WHISPER_MODEL="${WHISPER_MODEL:-small}"
+export VC_CHECKPOINT_PATH="$WORKSPACE/models/seed-vc/DiT_uvit_tat_xlsr_ema.pth"
+export VC_MODEL_CONFIG="${VC_MODEL_CONFIG:-configs/presets/config_dit_mel_seed_uvit_xlsr_tiny.yml}"
 export PERSONAPLEX_PROXY_HOST="${PERSONAPLEX_PROXY_HOST:-127.0.0.1}"
 export PERSONAPLEX_PROXY_PORT="${PERSONAPLEX_PROXY_PORT:-8000}"
+
+echo -e "${DIM}────────────────────────────────────────────────────${NC}"
+
+# --- PersonaPlex :8000 ---
+echo -e "  ${CYAN}▶${NC} PersonaPlex   :8000  ${DIM}(GPU)${NC}"
+( cd "$SERVICES/personaplex" && exec uv run python entrypoint.py \
+    --host 0.0.0.0 --port 8000 --device cuda --ssl "$SSL_DIR" ) &
+PID1=$!
+
+# --- app-api :5001 ---
+echo -e "  ${CYAN}▶${NC} app-api       :5001  ${DIM}(GPU)${NC}"
+( cd "$SERVICES/app_api" && exec uv run uvicorn app:create_app --factory \
+    --host 0.0.0.0 --port 5001 \
+    --ssl-keyfile "$SSL_DIR/key.pem" --ssl-certfile "$SSL_DIR/cert.pem" ) &
+PID2=$!
+
+# --- VC engine :5002 ---
 if [ "$VC_ENGINE" = "xvc" ]; then
-    echo "=== Starting X-VC (streaming VC, GPU) on port 5002 (SSL) ==="
-    XVC_VENV="$WORKSPACE/xvc-venv"
+    echo -e "  ${CYAN}▶${NC} X-VC          :5002  ${DIM}(GPU, streaming)${NC}"
     export XVC_DIR="$WORKSPACE/X-VC"
-    if [ ! -x "$XVC_VENV/bin/python" ] || [ ! -d "$XVC_DIR" ]; then
-        echo "ERROR: X-VC not installed ($XVC_DIR / $XVC_VENV). Run setup.sh and enable the X-VC engine."
-        exit 1
-    fi
     export XVC_CONFIG="$XVC_DIR/configs/xvc.yaml"
     export XVC_CKPT="$XVC_DIR/ckpts/xvc.pt"
     export MEANVC_PORT=5002
-    # Run from the X-VC repo (its config uses relative pretrained/ paths), with its own venv.
-    ( cd "$XVC_DIR" && "$XVC_VENV/bin/python" "$HEARMEOUT_DIR/infra/xvc_server.py" ) &
-    PID3=$!
-    VC_LABEL="X-VC"
+    [ -d "$XVC_DIR" ] || { echo -e "  ${YELLOW}ERROR:${NC} X-VC not installed — rerun setup.sh with --xvc."; exit 1; }
+    # Run from the X-VC repo (relative pretrained/ paths) using the services/xvc venv.
+    ( cd "$XVC_DIR" && exec uv run --project "$SERVICES/xvc" python "$SERVICES/xvc/server.py" ) &
+    PID3=$!; VC_LABEL="X-VC"
 else
-    echo "=== Starting MeanVC (streaming VC, CPU) on port 5002 (SSL) ==="
+    echo -e "  ${CYAN}▶${NC} MeanVC        :5002  ${DIM}(CPU, streaming)${NC}"
     export MEANVC_CKPT_DIR="$WORKSPACE/models/meanvc"
     export MEANVC_SV_CKPT="$WORKSPACE/models/meanvc-sv/wavlm_large_finetune.pth"
     export SPEAKER_VERIFICATION_ROOT="$WORKSPACE"
-    python3 infra/meanvc_server.py &
-    PID3=$!
-    VC_LABEL="MeanVC"
+    export MEANVC_PORT=5002
+    ( cd "$SERVICES/meanvc" && exec uv run python server.py ) &
+    PID3=$!; VC_LABEL="MeanVC"
 fi
 
-echo "All services: PersonaPlex PID=$PID1, app-api PID=$PID2, $VC_LABEL PID=$PID3"
+echo -e "${DIM}────────────────────────────────────────────────────${NC}"
+echo -e "  ${GREEN}started${NC}  PersonaPlex=$PID1  app-api=$PID2  $VC_LABEL=$PID3"
+echo -e "  ${DIM}(models load on first connect; Ctrl-C to stop all)${NC}"
+echo
 wait

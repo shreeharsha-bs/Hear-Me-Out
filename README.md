@@ -39,11 +39,11 @@ The backend is three services, set up and run entirely from this repo.
 | **app-api** | 5001 | GPU | FastAPI app — serves the built frontend + REST: `/api/transcribe` (faster-whisper), `/api/voice-conversion` (offline Seed-VC subprocess), `/api/metrics-comparison`. |
 | **MeanVC** *or* **X-VC** | 5002 | CPU / GPU | Real-time streaming voice conversion + the server-side chat-proxy that converts mic audio and forwards it to PersonaPlex over localhost. The engine is chosen at launch via `VC_ENGINE` (MeanVC = CPU; X-VC = GPU); only one runs, on the same port/endpoints. |
 
-All run behind self-signed SSL (browser mic capture requires HTTPS), launched by `infra/run_all.sh`. On the production host they run inside a Docker container (`infra/docker_launch.sh`, reference only).
+All run behind self-signed SSL (browser mic capture requires HTTPS), launched by `infra/run_all.sh`. Each backend is an independent **uv** project under `services/<name>/` (its own `pyproject.toml` + venv, so X-VC's torch 2.5 / py3.10 never clashes with the others' torch 2.4). On the production host they run inside a Docker container (`infra/docker_launch.sh`, reference only).
 
 ## Setup
 
-`infra/setup.sh` is self-bootstrapping and interactive: it clones the repo (with the `seed-vc` submodule) + PersonaPlex (pinned commit) + MeanVC, builds the venv, installs pinned deps (`infra/requirements-frozen.txt`), downloads all models, generates SSL, and wires up the workspace. It shows a fixed-header progress UI and writes a full log to the directory you run it from.
+`infra/setup.sh` is self-bootstrapping and interactive: it installs **uv**, clones the repo (with the `seed-vc` submodule) + MeanVC (for its speaker-verification source), then **`uv sync`s each service** into its own venv (uv pulls the right Python + torch per service, and fetches the PersonaPlex moshi fork as a git dependency), downloads all models, generates SSL, and wires up the workspace. It shows a fixed-header progress UI and writes a full log to the directory you run it from.
 
 ```bash
 export HF_TOKEN=hf_xxxxx   # access to gated nvidia/personaplex-7b-v1
@@ -64,11 +64,11 @@ cd <workspace> && bash Hear-Me-Out/infra/run_all.sh
 # PersonaPlex :8000   app-api :5001   MeanVC :5002   (all SSL)
 ```
 
-`run_all.sh` auto-detects the workspace from its own location; override with `WORKSPACE=…`. Set `FRONTEND_CHOICE=new|old` to skip the frontend prompt, and `VC_ENGINE=meanvc|xvc` to pick the voice-conversion engine on `:5002` (`xvc` requires the X-VC install from setup).
+`run_all.sh` auto-detects the workspace from its own location; override with `WORKSPACE=…`. It always serves the Vite build (`frontend/dist`, auto-built if missing). Set `VC_ENGINE=meanvc|xvc` to pick the voice-conversion engine on `:5002` (`xvc` requires the X-VC install from setup).
 
 ## Configuration
 
-`src/app.py` and `infra/meanvc_server.py` are fully env-driven; `run_all.sh` derives these from `WORKSPACE` (`<ws>`):
+`services/app_api/app.py` and `services/meanvc/server.py` are fully env-driven; `run_all.sh` derives these from `WORKSPACE` (`<ws>`):
 
 | Env var | Default | Used by |
 |---|---|---|
@@ -81,7 +81,7 @@ cd <workspace> && bash Hear-Me-Out/infra/run_all.sh
 | `SSL_DIR` | `<ws>/ssl` | all (TLS) |
 | `PERSONAPLEX_PROXY_HOST` / `PERSONAPLEX_PROXY_PORT` | `127.0.0.1` / `8000` | MeanVC chat-proxy → PersonaPlex |
 
-When `VC_ENGINE=xvc`, `run_all.sh` instead sets `XVC_DIR`, `XVC_CONFIG`, `XVC_CKPT`, and the streaming window `XVC_CHUNK_MS` / `XVC_CURRENT_MS` / `XVC_SMOOTH_MS` / `XVC_FUTURE_MS` (default `2400/120/20/100` ms), and runs `infra/xvc_server.py` from the `xvc-venv`.
+When `VC_ENGINE=xvc`, `run_all.sh` instead sets `XVC_DIR`, `XVC_CONFIG`, `XVC_CKPT`, and the streaming window `XVC_CHUNK_MS` / `XVC_CURRENT_MS` / `XVC_SMOOTH_MS` / `XVC_FUTURE_MS` (default `2400/120/20/100` ms), and runs `services/xvc/server.py` via the `services/xvc` uv env.
 
 ## Deploying a change
 
@@ -89,9 +89,12 @@ Edit locally, commit, push — then on the server:
 
 ```bash
 cd <workspace>/Hear-Me-Out && git pull
-bash infra/build-frontend.sh     # only if the frontend changed
-# restart the affected service (re-run run_all.sh, or restart app-api / MeanVC)
+bash infra/build-frontend.sh                 # only if the frontend changed
+( cd services/<name> && uv sync )            # only if that service's deps changed
+# restart the affected service (re-run run_all.sh, or restart app-api / the VC engine)
 ```
 
-A frontend-only change needs a rebuild + hard refresh, no backend restart. A backend change (`src/app.py`, `infra/meanvc_server.py`, `tools/metrics.py`) needs the service restarted.
+A frontend-only change needs a rebuild + hard refresh, no backend restart. A backend change
+(`services/app_api/app.py`, `services/meanvc/server.py`, `services/xvc/server.py`,
+`services/app_api/metrics.py`) needs the service restarted.
 

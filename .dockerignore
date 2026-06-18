@@ -47,10 +47,8 @@ assets/*.mp4
 # Seed-vc git
 seed-vc/.git
 
-# Infra directory (don't copy into container)
+# Infra ops scripts (not needed in the image; backend code is in services/, kept)
 infra/
-!infra/personaplex_entrypoint.py
-!infra/meanvc_server.py
 
 # Pre-downloaded models (bind-mounted at runtime, not in image)
 models/

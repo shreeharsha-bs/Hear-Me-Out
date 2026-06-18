@@ -23,12 +23,13 @@ import torch
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-_default_static = Path(__file__).parent.parent / "frontend" / "dist"
+# This file lives at <repo>/services/app_api/app.py, so the repo root is parents[2].
+REPO_ROOT = Path(__file__).resolve().parents[2]
+_default_static = REPO_ROOT / "frontend" / "dist"
 STATIC_PATH = Path(os.environ.get("FRONTEND_PATH", _default_static))
-SEED_VC_DIR = Path(__file__).parent.parent / "seed-vc"
+SEED_VC_DIR = REPO_ROOT / "seed-vc"
 INFERENCE_SCRIPT = SEED_VC_DIR / "inference.py"
-RECORDINGS_DIR = Path(__file__).parent.parent / "recordings"
-TOOLS_DIR = Path(__file__).parent.parent / "tools"
+RECORDINGS_DIR = REPO_ROOT / "recordings"
 
 ALLOWED_EXTENSIONS = {"wav", "mp3", "flac", "m4a", "ogg"}
 UPLOAD_FOLDER = tempfile.gettempdir()
@@ -313,7 +314,8 @@ def create_app():
 
             logger.info(f"Processing metrics comparison with ID: {comparison_id}")
 
-            sys.path.insert(0, str(TOOLS_DIR))
+            # metrics.py sits beside this file (services/app_api/).
+            sys.path.insert(0, str(Path(__file__).resolve().parent))
 
             try:
                 from metrics import analyze_voices, create_comprehensive_metrics_plot
@@ -392,7 +394,7 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(
-        "src.app:create_app",
+        "app:create_app",
         host="0.0.0.0",
         port=5001,
         factory=True,
