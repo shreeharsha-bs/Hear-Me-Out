@@ -37,7 +37,7 @@ dependencies = [
     "tensorboard==2.20.0",
     "descript-audiotools==0.7.2",
     # Added for our streaming server (Opus + proxy + model downloads).
-    "sphn>=0.1.4",
+    "sphn>=0.1.4,<0.2",   # 0.2+ removed OpusStreamWriter.read_bytes; server uses the 0.1.x API
     "aiohttp>=3.10",
     "huggingface-hub",
     "modelscope",
