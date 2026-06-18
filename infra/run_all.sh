@@ -59,6 +59,10 @@ fi
 
 export HF_HUB_ENABLE_HF_TRANSFER=1
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+# moshi uses torch.compile (inductor->triton) during warmup; skip it so PersonaPlex
+# runs without a triton toolchain (eager mode). Set NO_CUDA_GRAPH=1 too if CUDA-graph
+# capture errors. Remove these once triton is installed/working for the speedup.
+export NO_TORCH_COMPILE=1
 
 # Kill stale services.
 pkill -f "personaplex/entrypoint" 2>/dev/null || true
