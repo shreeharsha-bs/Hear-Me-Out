@@ -26,7 +26,9 @@ dependencies = [
     "tqdm==4.66.5",
     "wandb==0.18.5",
     "torchmetrics==1.8.0",
-    "pesq==0.0.4",
+    # pesq (eval-only PESQ metric) omitted: it's a Cython ext needing Python.h to
+    # build, and the streaming inference path doesn't use it. Re-add + install
+    # python3.10-dev if you need X-VC's eval scripts.
     "torchcrepe==0.0.23",
     "ema-pytorch==0.7.7",
     "packaging==24.2",
