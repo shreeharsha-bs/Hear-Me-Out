@@ -98,6 +98,10 @@ XVC_COMMIT="49df8c591eafc48b096e466d96f9839f9c0dd739"
 # and `uv run` downloads honor the chosen workspace.
 export WORKSPACE
 export HF_TOKEN
+# Progress bars (tqdm / hf_hub / hf_transfer) can't render in the captured-output
+# pane — they just "shiver". Disable them; the step spinner shows liveness instead.
+export HF_HUB_DISABLE_PROGRESS_BARS=1
+export TQDM_DISABLE=1
 REPO_DIR="$WORKSPACE/Hear-Me-Out"
 MODELS_DIR="$WORKSPACE/models"
 MEANVC_DIR="$WORKSPACE/MeanVC"

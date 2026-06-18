@@ -16,6 +16,9 @@ dependencies = [
     # Verify against the MeanVC repo's runtime requirements on first `uv lock`.
     "transformers",
     "einops==0.7.0",
+    # s3prl (wavlm_large SV) runs from the torch-hub cache; its upstreams import these.
+    "omegaconf",
+    "pyyaml",
 ]
 
 [[tool.uv.index]]
