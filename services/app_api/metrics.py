@@ -17,6 +17,45 @@ except ImportError:
     AUDIOBOX_AVAILABLE = False
     print("Warning: audiobox_aesthetics not available. Aesthetic metrics will use mock values.")
 
+# These metrics are offline/post-conversation analysis. Run them on CPU so they never
+# contend with PersonaPlex (7B) for GPU memory — repeatedly loading them on cuda after
+# every conversation was leaking/fragmenting GPU memory and causing OOM. Also cache each
+# model as a lazy singleton so they load once instead of per request.
+_asr_pipe = None
+_sentiment_pipe = None
+_sbert_model = None
+_aes_predictor = None
+
+def _get_asr():
+    global _asr_pipe
+    if _asr_pipe is None:
+        _asr_pipe = pipeline("automatic-speech-recognition", model="openai/whisper-small", device=-1)
+    return _asr_pipe
+
+def _get_sentiment():
+    global _sentiment_pipe
+    if _sentiment_pipe is None:
+        _sentiment_pipe = pipeline("sentiment-analysis", model="distilbert/distilbert-base-uncased-finetuned-sst-2-english", device=-1)
+    return _sentiment_pipe
+
+def _get_sbert():
+    global _sbert_model
+    if _sbert_model is None:
+        _sbert_model = SentenceTransformer('all-MiniLM-L6-v2', device='cpu')
+    return _sbert_model
+
+def _get_aes():
+    global _aes_predictor
+    if _aes_predictor is None and AUDIOBOX_AVAILABLE:
+        _aes_predictor = initialize_predictor()
+        # initialize_predictor() auto-selects cuda; force it onto CPU.
+        try:
+            _aes_predictor.model.to('cpu')
+            _aes_predictor.device = torch.device('cpu')
+        except Exception as e:
+            print(f"Warning: could not move audiobox predictor to CPU: {e}")
+    return _aes_predictor
+
 # You might need to install the following packages:
 # pip install librosa pyphen transformers torch sentence-transformers soundfile audiobox_aesthetics matplotlib
 
@@ -26,8 +65,7 @@ def get_transcript(audio_path):
     Transcribes the audio file using Whisper.
     """
     try:
-        # Use a smaller model for faster processing, or a larger one for higher accuracy
-        transcriber = pipeline("automatic-speech-recognition", model="openai/whisper-small", device='cuda' if torch.cuda.is_available() else 'cpu')
+        transcriber = _get_asr()
         # chunk_length_s enables Whisper's long-form algorithm; without it the
         # pipeline only handles the first 30s and raises on longer clips
         # (which previously got swallowed -> empty transcript -> 0 syl/s).
@@ -84,7 +122,7 @@ def analyze_sentiment(transcript):
     """
     try:
         print(transcript)
-        sentiment_pipeline = pipeline("sentiment-analysis", model="distilbert/distilbert-base-uncased-finetuned-sst-2-english", device='cuda' if torch.cuda.is_available() else 'cpu')
+        sentiment_pipeline = _get_sentiment()
         result = sentiment_pipeline(transcript)
         return result[0]['label']
     except Exception as e:
@@ -97,8 +135,8 @@ def calculate_semantic_similarity(transcript_a, transcript_b):
     Calculates the semantic similarity between two transcripts.
     """
     try:
-        model = SentenceTransformer('all-MiniLM-L6-v2', device='cuda' if torch.cuda.is_available() else 'cpu')
-        
+        model = _get_sbert()
+
         # Compute embedding for both transcripts
         embedding_1 = model.encode(transcript_a, convert_to_tensor=True)
         embedding_2 = model.encode(transcript_b, convert_to_tensor=True)
@@ -169,7 +207,7 @@ def analyze_voices(audio_path_a, audio_path_b):
     
     if AUDIOBOX_AVAILABLE:
         try:
-            predictor = initialize_predictor()
+            predictor = _get_aes()
             scores = predictor.forward([{"path": audio_path_a}, {"path": audio_path_b}])
 
             # The model returns keys like 'PQ', 'CU', etc. We map them to our desired keys.

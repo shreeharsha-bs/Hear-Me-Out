@@ -147,6 +147,10 @@ def create_app():
             return JSONResponse({"text": text, "segments": segments})
         finally:
             os.unlink(temp_path)
+            # Release Whisper's CUDA working memory between conversations so it
+            # doesn't pile up next to PersonaPlex on the shared GPU.
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
 
     @app.post("/api/voice-conversion")
     async def voice_conversion(
