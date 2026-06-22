@@ -3,11 +3,21 @@
 checkpoints/models*
 checkpoints/.locks/*
 checkpoints/hf_cache*
-tools/__pycache__/
+
+# Python
+__pycache__/
+*.py[cod]
+
+# e2e / Playwright test artifacts
+test-results/
+playwright-report/
+playwright/.cache/
+blob-report/
+
 models/
 .opencode/
 .agents/
-skills-lock.jsontools/test-recordings/
+skills-lock.json
 tools/test-recordings/
 recordings/Tensta Centrum.m4a
 recordings/Tensta Centrum.wav
