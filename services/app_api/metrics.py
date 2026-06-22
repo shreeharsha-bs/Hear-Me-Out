@@ -47,8 +47,15 @@ def _get_sbert():
 def _get_aes():
     global _aes_predictor
     if _aes_predictor is None and AUDIOBOX_AVAILABLE:
-        _aes_predictor = initialize_predictor()
-        # initialize_predictor() auto-selects cuda; force it onto CPU.
+        # audiobox's setup_model() loads on cuda when available — which OOMs on a full
+        # shared GPU (PersonaPlex/X-VC) *during* the load, before we could move it.
+        # Hide cuda for the duration of init so it loads straight onto CPU.
+        _orig_avail = torch.cuda.is_available
+        torch.cuda.is_available = lambda: False
+        try:
+            _aes_predictor = initialize_predictor()
+        finally:
+            torch.cuda.is_available = _orig_avail
         try:
             _aes_predictor.model.to('cpu')
             _aes_predictor.device = torch.device('cpu')
