@@ -1,0 +1,34 @@
+[project]
+name = "hearmeout-personaplex"
+version = "0.1.0"
+description = "Hear-Me-Out PersonaPlex: thin entrypoint over the NVIDIA personaplex moshi fork (speech LM, GPU)."
+requires-python = ">=3.11,<3.12"
+dependencies = [
+    # The moshi fork (installs as 'moshi'); pulled directly from git by uv,
+    # so no separate personaplex clone is needed. It brings its own deps
+    # (sphn, sentencepiece, etc.); we pin torch to the cu121 build below.
+    "moshi-personaplex",
+    "torch==2.4.0",
+    "torchaudio==2.4.0",
+    "huggingface-hub>=0.34,<1.0",
+    "hf-transfer>=0.1.8",
+]
+
+# The moshi fork declares huggingface-hub>=0.24,<0.25, but PersonaPlex runs fine on
+# newer hub (prod uses 0.36). Override that stale pin (uv's strict resolver needs this;
+# the old pip flow force-reinstalled it). Add more overrides here if other moshi pins
+# (e.g. transformers) block resolution.
+[tool.uv]
+# huggingface-hub: override moshi's stale <0.25 pin (prod runs 0.36).
+# sphn<0.2: moshi's server uses the 0.1.x Opus API (read_bytes); 0.2+ removed it.
+override-dependencies = ["huggingface-hub>=0.34,<1.0", "sphn>=0.1.4,<0.2"]
+
+[[tool.uv.index]]
+name = "pytorch-cu121"
+url = "https://download.pytorch.org/whl/cu121"
+explicit = true
+
+[tool.uv.sources]
+moshi-personaplex = { git = "https://github.com/NVIDIA/personaplex", rev = "3428dfd95309a7f3c84fd93259ded0f810d1ff91", subdirectory = "moshi" }
+torch = { index = "pytorch-cu121" }
+torchaudio = { index = "pytorch-cu121" }

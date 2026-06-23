@@ -1,5 +1,0 @@
-modal
-sounddevice
-numpy
-sphn
-aiohttp

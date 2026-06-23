@@ -1,0 +1,54 @@
+# Git
+.git
+.gitmodules
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.egg-info
+.ruff_cache
+
+# Model checkpoints (mounted as volumes)
+checkpoints/*
+!checkpoints/.gitkeep
+checkpoints/hf_cache/*
+checkpoints/.locks/*
+
+# Recordings (include referenced files)
+recordings/*
+!recordings/tara__chuckle*.wav
+!recordings/Target_2.wav
+
+# Media
+*.mp4
+*.png
+*.gif
+*.pdf
+
+# Dev/test files
+tests/
+test_*.py
+
+# OS
+.DS_Store
+
+# Jekyll/GitHub Pages
+_site/
+.jekyll-cache/
+Gemfile
+Gemfile.lock
+vendor/
+
+# Documentation assets
+assets/*.mp4
+
+# Seed-vc git
+seed-vc/.git
+
+# Infra ops scripts (not needed in the image; backend code is in services/, kept)
+infra/
+
+# Pre-downloaded models (bind-mounted at runtime, not in image)
+models/
