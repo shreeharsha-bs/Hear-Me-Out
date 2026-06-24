@@ -2,7 +2,7 @@ import warnings
 import librosa
 import numpy as np
 import pyphen
-from transformers import pipeline
+from transformers import pipeline, WhisperProcessor, WhisperForConditionalGeneration
 from sentence_transformers import SentenceTransformer, util
 import torch
 import soundfile as sf
@@ -25,16 +25,19 @@ except ImportError:
 # contend with PersonaPlex (7B) for GPU memory — repeatedly loading them on cuda after
 # every conversation was leaking/fragmenting GPU memory and causing OOM. Also cache each
 # model as a lazy singleton so they load once instead of per request.
-_asr_pipe = None
+_asr_processor = None
+_asr_model = None
 _sentiment_pipe = None
 _sbert_model = None
 _aes_predictor = None
 
 def _get_asr():
-    global _asr_pipe
-    if _asr_pipe is None:
-        _asr_pipe = pipeline("automatic-speech-recognition", model="openai/whisper-small", device=-1, ignore_warning=True)
-    return _asr_pipe
+    global _asr_processor, _asr_model
+    if _asr_model is None:
+        _asr_processor = WhisperProcessor.from_pretrained("openai/whisper-small")
+        _asr_model = WhisperForConditionalGeneration.from_pretrained("openai/whisper-small")
+        _asr_model.eval()
+    return _asr_processor, _asr_model
 
 def _get_sentiment():
     global _sentiment_pipe
@@ -67,21 +70,26 @@ def _get_aes():
             print(f"Warning: could not move audiobox predictor to CPU: {e}")
     return _aes_predictor
 
-# You might need to install the following packages:
-# pip install librosa pyphen transformers torch sentence-transformers soundfile audiobox_aesthetics matplotlib
-
-# This function will convert audio to text.
 def get_transcript(audio_path):
-    """
-    Transcribes the audio file using Whisper.
-    """
     try:
-        transcriber = _get_asr()
-        # chunk_length_s enables Whisper's long-form algorithm; without it the
-        # pipeline only handles the first 30s and raises on longer clips
-        # (which previously got swallowed -> empty transcript -> 0 syl/s).
-        transcript = transcriber(audio_path, chunk_length_s=30, batch_size=8)["text"]
-        return transcript
+        processor, model = _get_asr()
+        audio, _ = librosa.load(audio_path, sr=16000)
+        # truncation=False + return_timestamps uses Whisper's own long-form sliding-window
+        # algorithm (paper §3.8) rather than the pipeline's experimental chunk_length_s.
+        inputs = processor(
+            audio, sampling_rate=16000, return_tensors="pt",
+            truncation=False, padding="longest", return_attention_mask=True,
+        )
+        with torch.no_grad():
+            ids = model.generate(
+                **inputs,
+                condition_on_prev_tokens=False,
+                temperature=(0.0, 0.2, 0.4, 0.6, 0.8, 1.0),
+                logprob_threshold=-1.0,
+                compression_ratio_threshold=2.4,
+                return_timestamps=True,
+            )
+        return processor.batch_decode(ids, skip_special_tokens=True)[0].strip()
     except Exception as e:
         print(f"Error during transcription: {e}")
         return ""
