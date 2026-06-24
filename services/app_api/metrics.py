@@ -1,3 +1,4 @@
+import warnings
 import librosa
 import numpy as np
 import pyphen
@@ -7,6 +8,9 @@ import torch
 import soundfile as sf
 import matplotlib
 matplotlib.use('Agg')  # Use non-interactive backend for server environments
+
+# PyTorch internal deprecation from attention layers in SBERT/transformers; not actionable.
+warnings.filterwarnings("ignore", message="Support for mismatched key_padding_mask and attn_mask")
 from matplotlib.patches import FancyBboxPatch
 import matplotlib.pyplot as plt
 
@@ -29,7 +33,7 @@ _aes_predictor = None
 def _get_asr():
     global _asr_pipe
     if _asr_pipe is None:
-        _asr_pipe = pipeline("automatic-speech-recognition", model="openai/whisper-small", device=-1)
+        _asr_pipe = pipeline("automatic-speech-recognition", model="openai/whisper-small", device=-1, ignore_warning=True)
     return _asr_pipe
 
 def _get_sentiment():
