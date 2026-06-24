@@ -74,21 +74,14 @@ def get_transcript(audio_path):
     try:
         processor, model = _get_asr()
         audio, _ = librosa.load(audio_path, sr=16000)
-        # truncation=False + return_timestamps uses Whisper's own long-form sliding-window
-        # algorithm (paper §3.8) rather than the pipeline's experimental chunk_length_s.
+        # Per transformers docs: truncation=False + return_attention_mask + padding="longest"
+        # feeds the full audio; return_timestamps enables Whisper's own long-form algorithm (§3.8).
         inputs = processor(
             audio, sampling_rate=16000, return_tensors="pt",
             truncation=False, padding="longest", return_attention_mask=True,
         )
         with torch.no_grad():
-            ids = model.generate(
-                **inputs,
-                condition_on_prev_tokens=False,
-                temperature=(0.0, 0.2, 0.4, 0.6, 0.8, 1.0),
-                logprob_threshold=-1.0,
-                compression_ratio_threshold=2.4,
-                return_timestamps=True,
-            )
+            ids = model.generate(**inputs, return_timestamps=True)
         return processor.batch_decode(ids, skip_special_tokens=True)[0].strip()
     except Exception as e:
         print(f"Error during transcription: {e}")
