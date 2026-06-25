@@ -16,7 +16,7 @@ dependencies = [
     "aiohttp>=3.10",
     "sphn>=0.1.4,<0.2",          # Opus codec; 0.2+ removed OpusStreamWriter.read_bytes
     "librosa==0.9.0",            # 24k->16k mic resampling + ref-audio IO; pinned by minicpmo-utils
-    "setuptools",                # librosa 0.9.0 imports pkg_resources at load (not bundled in py3.11 venvs)
+    "setuptools<81",             # librosa 0.9.0 imports pkg_resources at load; setuptools>=81 removed it
     "numpy",                     # version driven by minicpmo-utils/librosa
     "silero-vad>=5.1",           # streaming turn detection (VADIterator)
     "huggingface-hub>=0.34,<1.0",
