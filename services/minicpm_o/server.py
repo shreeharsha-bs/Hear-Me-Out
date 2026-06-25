@@ -25,15 +25,13 @@ import argparse
 import asyncio
 import logging
 import os
-import sys
-import tempfile
+from pathlib import Path
 
 import librosa
 import numpy as np
 import sphn
 import torch
 
-import aiohttp
 from aiohttp import web
 
 logging.basicConfig(
@@ -46,93 +44,147 @@ TAG_HANDSHAKE = b"\x00"
 TAG_AUDIO = b"\x01"
 TAG_TEXT = b"\x02"
 
-# Browser-facing Opus rate (opus-recorder/ogg-opus-decoder both use 24kHz here).
+# Browser-facing Opus rate (opus-recorder/ogg-opus-decoder both use 24kHz here),
+# which is also MiniCPM-o's fixed TTS output rate — so reply audio needs no resampling.
 OPUS_SR = 24000
-# MiniCPM-o consumes 16kHz audio.
+# MiniCPM-o consumes 16kHz audio (fixed).
 MODEL_IN_SR = 16000
+# streaming_prefill takes the user turn in 1s chunks (16000 samples @16kHz).
+PREFILL_CHUNK = 16000
+MIN_AUDIO_SAMPLES = 16000  # pad the final chunk up to this if shorter
 # sphn.append_pcm only accepts exact Opus frame sizes; 1920 @ 24kHz = 80ms,
 # the same frame PersonaPlex feeds.
 OPUS_FRAME = 1920
 
 MODEL_ID = os.environ.get("MINICPM_O_MODEL", "openbmb/MiniCPM-o-4_5")
 
+# Reference audio that defines the assistant's voice (16kHz). MiniCPM-o clones this
+# voice for its replies. Override with MINICPM_REF_AUDIO; defaults to a repo recording.
+REPO_ROOT = Path(__file__).resolve().parents[2]
+REF_AUDIO_PATH = os.environ.get(
+    "MINICPM_REF_AUDIO", str(REPO_ROOT / "recordings" / "Target_2.wav")
+)
+
+# Default assistant instruction when the frontend doesn't pass a text_prompt.
+DEFAULT_INSTRUCTION = (
+    "Please assist users while maintaining this voice style. Answer the user's "
+    "questions seriously and with high quality, in a highly human-like and oral style."
+)
+
 
 # ---------------------------------------------------------------------------
-# MiniCPM-o engine (the one place to adjust for the installed model version).
+# MiniCPM-o engine — follows the official "Half-Duplex Realtime Speech
+# Conversation" API (model card for openbmb/MiniCPM-o-4_5).
 # ---------------------------------------------------------------------------
 class MiniCPMOEngine:
-    """Loads MiniCPM-o once and runs one speech-to-speech turn at a time.
+    """Loads MiniCPM-o once; one conversation (session) at a time.
 
-    Concurrency: the model holds per-call state, so a process-wide lock
-    serializes turns (fine for the single-speaker research UI).
+    The model keeps a single global streaming session + token2wav cache, so a
+    process-wide lock serializes turns/sessions (fine for the single-speaker
+    research UI). Output audio is fixed at 24kHz.
     """
 
-    def __init__(self, device: str = "cuda"):
-        from transformers import AutoModel, AutoTokenizer
+    SESSION_ID = "hmo"
+
+    def __init__(self, device: str = "cuda", ref_audio_path: str = REF_AUDIO_PATH):
+        from transformers import AutoModel
 
         logger.info(f"Loading {MODEL_ID} on {device} (bf16)...")
         self.device = device
         self.model = AutoModel.from_pretrained(
             MODEL_ID,
             trust_remote_code=True,
-            torch_dtype=torch.bfloat16,
             attn_implementation="sdpa",
+            torch_dtype=torch.bfloat16,
         )
-        # Initialize the TTS sub-module so the model can emit speech.
+        self.model.eval().to(device)
         self.model.init_tts()
-        self.model.to(device).eval()
-        self.tokenizer = AutoTokenizer.from_pretrained(
-            MODEL_ID, trust_remote_code=True
-        )
+
+        if not os.path.exists(ref_audio_path):
+            raise FileNotFoundError(
+                f"Reference voice audio not found: {ref_audio_path} "
+                f"(set MINICPM_REF_AUDIO to a 16kHz wav)."
+            )
+        self.ref_audio, _ = librosa.load(ref_audio_path, sr=16000, mono=True)
+        logger.info(f"Voice reference: {ref_audio_path}")
         self.lock = asyncio.Lock()
         logger.info("MiniCPM-o loaded.")
 
-    def _run(self, pcm_16k: np.ndarray, system_prompt: str):
-        """Blocking: one user turn (16kHz PCM) -> (text, audio_24k float32).
+    def _sys_msg(self, text_prompt: str) -> dict:
+        # Per the model card: instruct voice-clone, supply the ref audio, then the
+        # behaviour instruction. The frontend's text_prompt becomes that instruction.
+        return {
+            "role": "system",
+            "content": [
+                "Clone the voice in the provided audio prompt.",
+                self.ref_audio,
+                text_prompt or DEFAULT_INSTRUCTION,
+            ],
+        }
 
-        Uses MiniCPM-o's documented speech-to-speech chat API. If the installed
-        4.5 build differs, this method is the only thing to adjust.
+    def _start_session(self, text_prompt: str):
+        """Reset state, set the voice, and prefill the system turn."""
+        self.model.reset_session(reset_token2wav_cache=True)
+        self.model.init_token2wav_cache(prompt_speech_16k=self.ref_audio)
+        self.model.streaming_prefill(
+            session_id=self.SESSION_ID,
+            msgs=[self._sys_msg(text_prompt)],
+            omni_mode=False,
+            is_last_chunk=True,
+        )
+
+    def _run(self, pcm_16k: np.ndarray):
+        """Blocking: prefill one user turn (16kHz) in 1s chunks, then generate.
+
+        Returns (text, audio_24k float32) — audio is already at OPUS_SR.
         """
-        import soundfile as sf
-
-        msgs = []
-        if system_prompt:
-            msgs.append({"role": "system", "content": [system_prompt]})
-        msgs.append({"role": "user", "content": [pcm_16k]})
-
-        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tf:
-            out_path = tf.name
-        try:
-            res = self.model.chat(
-                msgs=msgs,
-                tokenizer=self.tokenizer,
-                sampling=True,
-                max_new_tokens=512,
-                use_tts_template=True,
-                generate_audio=True,
-                output_audio_path=out_path,
+        total = len(pcm_16k)
+        num_chunks = (total + PREFILL_CHUNK - 1) // PREFILL_CHUNK
+        for ci in range(num_chunks):
+            start = ci * PREFILL_CHUNK
+            end = min((ci + 1) * PREFILL_CHUNK, total)
+            chunk = pcm_16k[start:end]
+            is_last = ci == num_chunks - 1
+            if is_last and len(chunk) < MIN_AUDIO_SAMPLES:
+                chunk = np.concatenate(
+                    [chunk, np.zeros(MIN_AUDIO_SAMPLES - len(chunk), dtype=chunk.dtype)]
+                )
+            self.model.streaming_prefill(
+                session_id=self.SESSION_ID,
+                msgs=[{"role": "user", "content": [chunk]}],
+                omni_mode=False,
+                is_last_chunk=is_last,
             )
-            text = getattr(res, "text", None)
-            if text is None:
-                text = res if isinstance(res, str) else str(res)
 
-            audio_24k = np.array([], dtype=np.float32)
-            if os.path.exists(out_path) and os.path.getsize(out_path) > 0:
-                wav, sr = sf.read(out_path, dtype="float32")
-                if wav.ndim > 1:
-                    wav = wav.mean(axis=1)
-                if sr != OPUS_SR:
-                    wav = librosa.resample(wav, orig_sr=sr, target_sr=OPUS_SR)
-                audio_24k = wav.astype(np.float32)
-            return text, audio_24k
-        finally:
-            if os.path.exists(out_path):
-                os.unlink(out_path)
+        iter_gen = self.model.streaming_generate(
+            session_id=self.SESSION_ID,
+            generate_audio=True,
+            use_tts_template=True,
+            enable_thinking=False,
+            do_sample=True,
+            max_new_tokens=512,
+            length_penalty=1.1,  # model card's suggestion for realtime speech
+        )
+        audios = []
+        text = ""
+        for wav_chunk, text_chunk in iter_gen:
+            audios.append(wav_chunk)
+            text += text_chunk
+        if audios:
+            wav = torch.cat(audios, dim=-1)[0].float().cpu().numpy()
+        else:
+            wav = np.array([], dtype=np.float32)
+        return text, wav.astype(np.float32)
 
-    async def generate(self, pcm_16k: np.ndarray, system_prompt: str):
+    async def start_session(self, text_prompt: str):
         loop = asyncio.get_event_loop()
         async with self.lock:
-            return await loop.run_in_executor(None, self._run, pcm_16k, system_prompt)
+            await loop.run_in_executor(None, self._start_session, text_prompt)
+
+    async def generate(self, pcm_16k: np.ndarray):
+        loop = asyncio.get_event_loop()
+        async with self.lock:
+            return await loop.run_in_executor(None, self._run, pcm_16k)
 
 
 engine: MiniCPMOEngine | None = None
@@ -150,6 +202,14 @@ async def handle_chat(request: web.Request) -> web.WebSocketResponse:
 
     ws = web.WebSocketResponse(max_msg_size=0)
     await ws.prepare(request)
+
+    # Set the voice + prefill the system turn before signalling ready.
+    try:
+        await engine.start_session(text_prompt)
+    except Exception as e:
+        logger.error(f"[chat] session init failed: {e}")
+        await ws.close()
+        return ws
     await ws.send_bytes(TAG_HANDSHAKE)
     logger.info("[chat] client connected, handshake sent")
 
@@ -219,7 +279,7 @@ async def handle_chat(request: web.Request) -> web.WebSocketResponse:
                     if len(utterance) < MODEL_IN_SR // 4:  # <0.25s -> noise
                         continue
                     try:
-                        text, audio_24k = await engine.generate(utterance, text_prompt)
+                        text, audio_24k = await engine.generate(utterance)
                         await stream_reply(text, audio_24k)
                     except Exception as e:
                         logger.error(f"[chat] generation error: {e}")
