@@ -101,8 +101,9 @@ class MiniCPMODuplexEngine:
             init_tts=True,
         )
         model.eval().to(device)
-        model.init_tts()
         # Convert to full-duplex mode (listen + speak on parallel streams).
+        # NB: as_duplex() calls init_tts() internally — do NOT init_tts() here too,
+        # or the Token2wav vocoder loads twice and wastes VRAM (OOMs a full 24GB card).
         self.model = model.as_duplex()
 
         if not os.path.exists(ref_audio_path):
