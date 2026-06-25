@@ -91,11 +91,16 @@ class MiniCPMOEngine:
 
         logger.info(f"Loading {MODEL_ID} on {device} (bf16)...")
         self.device = device
+        # We only do speech-to-speech, so skip the vision encoder (init_vision=False)
+        # to save several GB of VRAM — omni models load vision+audio+tts by default.
         self.model = AutoModel.from_pretrained(
             MODEL_ID,
             trust_remote_code=True,
             attn_implementation="sdpa",
             torch_dtype=torch.bfloat16,
+            init_vision=False,
+            init_audio=True,
+            init_tts=True,
         )
         self.model.eval().to(device)
         self.model.init_tts()
