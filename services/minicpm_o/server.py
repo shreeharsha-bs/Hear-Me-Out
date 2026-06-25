@@ -67,6 +67,10 @@ MODEL_ID = os.environ.get("MINICPM_O_MODEL", "openbmb/MiniCPM-o-4_5")
 # Official example uses 20; tune MINICPM_SPEAK_TOKENS on the box to taste.
 SPEAK_TOKENS_PER_CHUNK = int(os.environ.get("MINICPM_SPEAK_TOKENS", "20"))
 
+# Attention kernel: "sdpa" (default, always works) or "flash_attention_2" (faster,
+# better real-time factor) if the flash-attn wheel installed cleanly on the box.
+ATTN_IMPL = os.environ.get("MINICPM_ATTN", "sdpa")
+
 # Reference audio that defines the assistant's voice (16kHz). MiniCPM-o clones this
 # voice for its replies. Override with MINICPM_REF_AUDIO; defaults to a repo recording.
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -96,12 +100,12 @@ class MiniCPMODuplexEngine:
     def __init__(self, device: str = "cuda", ref_audio_path: str = REF_AUDIO_PATH):
         from transformers import AutoModel
 
-        logger.info(f"Loading {MODEL_ID} on {device} (bf16, duplex)...")
+        logger.info(f"Loading {MODEL_ID} on {device} (bf16, duplex, attn={ATTN_IMPL})...")
         self.device = device
         model = AutoModel.from_pretrained(
             MODEL_ID,
             trust_remote_code=True,
-            attn_implementation="sdpa",
+            attn_implementation=ATTN_IMPL,
             torch_dtype=torch.bfloat16,
             # Speech-to-speech only — skip the vision encoder to save VRAM.
             init_vision=False,

@@ -86,6 +86,11 @@ sleep 2
 # Shared env consumed by the service processes.
 export FRONTEND_PATH SSL_DIR
 export WHISPER_MODEL="${WHISPER_MODEL:-small}"
+# MiniCPM-o duplex needs the whole 24GB card, so push app-api's Whisper to CPU
+# (frees ~0.5GB + reduces GPU contention). PersonaPlex leaves Whisper on GPU.
+if [ "$SPEECH_LM_ENGINE" = "minicpm_o" ]; then
+    export WHISPER_DEVICE="${WHISPER_DEVICE:-cpu}"
+fi
 export VC_CHECKPOINT_PATH="$WORKSPACE/models/seed-vc/DiT_uvit_tat_xlsr_ema.pth"
 export VC_MODEL_CONFIG="${VC_MODEL_CONFIG:-configs/presets/config_dit_mel_seed_uvit_xlsr_tiny.yml}"
 export PERSONAPLEX_PROXY_HOST="${PERSONAPLEX_PROXY_HOST:-127.0.0.1}"
