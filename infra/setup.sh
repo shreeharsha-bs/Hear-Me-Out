@@ -162,6 +162,7 @@ phase_sync() {
   echo "uv sync: app_api ..."      ; ( cd "$SERVICES/app_api"     && uv sync )
   echo "uv sync: meanvc ..."       ; ( cd "$SERVICES/meanvc"      && uv sync )
   echo "uv sync: personaplex (pulls moshi from git) ..." ; ( cd "$SERVICES/personaplex" && uv sync )
+  echo "uv sync: minicpm_o ..."    ; ( cd "$SERVICES/minicpm_o"   && uv sync )
   if $INSTALL_XVC; then
     echo "uv sync: xvc (py3.10, torch 2.5.1) ..." ; ( cd "$SERVICES/xvc" && uv sync )
   fi
@@ -175,6 +176,10 @@ phase_models() {
   else
     echo "WARN: HF_TOKEN not set — skipping gated PersonaPlex model."
   fi
+  # MiniCPM-o 4.5 (public, ~18GB) — the alternative :8000 speech LM (SPEECH_LM_ENGINE=minicpm_o).
+  echo "Downloading MiniCPM-o 4.5 (~18GB)..."
+  uv run --project "$SERVICES/minicpm_o" python -c "from huggingface_hub import snapshot_download; snapshot_download('openbmb/MiniCPM-o-4_5'); print('MiniCPM-o 4.5 ready.')" \
+    || echo "WARN: MiniCPM-o download failed; rerun setup or fetch openbmb/MiniCPM-o-4_5 manually."
   local SEEDVC_CKPT="$MODELS_DIR/seed-vc/DiT_uvit_tat_xlsr_ema.pth"
   if [ ! -f "$SEEDVC_CKPT" ]; then
     echo "Downloading Seed-VC checkpoint..."
@@ -344,7 +349,7 @@ echo -e "${GREEN}✓ Setup complete!${NC}"
 echo -e "  ${BOLD}workspace${NC}  $WORKSPACE"
 echo -e "  ${BOLD}deps${NC}       per-service uv envs under services/*/.venv"
 echo -e "  ${BOLD}start${NC}      bash $REPO_DIR/infra/run_all.sh"
-echo -e "  ${BOLD}ports${NC}      PersonaPlex :8000   app-api :5001   MeanVC/X-VC :5002"
+echo -e "  ${BOLD}ports${NC}      PersonaPlex/MiniCPM-o :8000   app-api :5001   MeanVC/X-VC :5002"
 echo -e "  ${BOLD}log${NC}        $SETUP_LOG"
 [ -n "$HF_TOKEN" ] || echo -e "  ${YELLOW}note${NC}       HF_TOKEN was not set — rerun with a token to fetch PersonaPlex."
 echo
