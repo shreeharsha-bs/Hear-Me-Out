@@ -15,9 +15,8 @@ dependencies = [
     # Our bridge server.
     "aiohttp>=3.10",
     "sphn>=0.1.4,<0.2",          # Opus codec; 0.2+ removed OpusStreamWriter.read_bytes
-    "librosa==0.10.2",           # 24k->16k mic resampling, ref-audio IO
-    "soundfile==0.12.1",
-    "numpy==1.26.4",
+    "librosa==0.9.0",            # 24k->16k mic resampling + ref-audio IO; pinned by minicpmo-utils
+    "numpy",                     # version driven by minicpmo-utils/librosa
     "silero-vad>=5.1",           # streaming turn detection (VADIterator)
     "huggingface-hub>=0.34,<1.0",
     "hf-transfer>=0.1.8",
