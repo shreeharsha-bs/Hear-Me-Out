@@ -1,8 +1,9 @@
 #!/bin/bash
 # Hear-Me-Out: launch all services with SSL (uv per-service).
-#   PersonaPlex :8000 (GPU)   app-api :5001 (GPU)   MeanVC|X-VC :5002
+#   PersonaPlex|MiniCPM-o :8000 (GPU)   app-api :5001 (GPU)   MeanVC|X-VC :5002
 # Each service runs in its own uv project venv (uv run --project / from its dir).
-# Override the workspace with WORKSPACE=/dir; pick the VC engine with VC_ENGINE=meanvc|xvc.
+# Override the workspace with WORKSPACE=/dir.
+# Pick the speech LM with SPEECH_LM_ENGINE=personaplex|minicpm_o; the VC engine with VC_ENGINE=meanvc|xvc.
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" 2>/dev/null && pwd)"
 # Defaults to the repo's parent (this script lives at <workspace>/Hear-Me-Out/infra/run_all.sh).
@@ -47,6 +48,16 @@ if [ ! -d "$FRONTEND_PATH" ]; then
 fi
 echo -e "  ${DIM}frontend${NC}   $FRONTEND_PATH"
 
+# Pick the speech LM engine (only one runs on :8000).
+if [ -z "$SPEECH_LM_ENGINE" ]; then
+  echo ""
+  echo "  Which speech LM on :8000?"
+  echo "    1) PersonaPlex  (moshi fork, GPU) [default]"
+  echo "    2) MiniCPM-o    (omni speech LM, GPU)"
+  read -t 60 -p "  Choice [1/2]: " lm_choice < /dev/tty 2>/dev/tty || lm_choice="1"
+  case "$lm_choice" in 2) SPEECH_LM_ENGINE=minicpm_o ;; *) SPEECH_LM_ENGINE=personaplex ;; esac
+fi
+
 # Pick the voice-conversion engine (only one runs on :5002).
 if [ -z "$VC_ENGINE" ]; then
   echo ""
@@ -66,6 +77,7 @@ export NO_TORCH_COMPILE=1
 
 # Kill stale services.
 pkill -f "personaplex/entrypoint" 2>/dev/null || true
+pkill -f "minicpm_o/server.py" 2>/dev/null || true
 pkill -f "app:create_app" 2>/dev/null || true
 pkill -f "meanvc/server.py" 2>/dev/null || true
 pkill -f "xvc/server.py" 2>/dev/null || true
@@ -81,11 +93,18 @@ export PERSONAPLEX_PROXY_PORT="${PERSONAPLEX_PROXY_PORT:-8000}"
 
 echo -e "${DIM}────────────────────────────────────────────────────${NC}"
 
-# --- PersonaPlex :8000 ---
-echo -e "  ${CYAN}▶${NC} PersonaPlex   :8000  ${DIM}(GPU)${NC}"
-( cd "$SERVICES/personaplex" && exec uv run python entrypoint.py \
-    --host 0.0.0.0 --port 8000 --device cuda --ssl "$SSL_DIR" ) &
-PID1=$!
+# --- Speech LM :8000 ---
+if [ "$SPEECH_LM_ENGINE" = "minicpm_o" ]; then
+    echo -e "  ${CYAN}▶${NC} MiniCPM-o     :8000  ${DIM}(GPU)${NC}"
+    ( cd "$SERVICES/minicpm_o" && exec uv run python server.py \
+        --host 0.0.0.0 --port 8000 --device cuda --ssl "$SSL_DIR" ) &
+    PID1=$!; LM_LABEL="MiniCPM-o"
+else
+    echo -e "  ${CYAN}▶${NC} PersonaPlex   :8000  ${DIM}(GPU)${NC}"
+    ( cd "$SERVICES/personaplex" && exec uv run python entrypoint.py \
+        --host 0.0.0.0 --port 8000 --device cuda --ssl "$SSL_DIR" ) &
+    PID1=$!; LM_LABEL="PersonaPlex"
+fi
 
 # --- app-api :5001 ---
 echo -e "  ${CYAN}▶${NC} app-api       :5001  ${DIM}(GPU)${NC}"
@@ -116,7 +135,7 @@ else
 fi
 
 echo -e "${DIM}────────────────────────────────────────────────────${NC}"
-echo -e "  ${GREEN}started${NC}  PersonaPlex=$PID1  app-api=$PID2  $VC_LABEL=$PID3"
+echo -e "  ${GREEN}started${NC}  $LM_LABEL=$PID1  app-api=$PID2  $VC_LABEL=$PID3"
 echo -e "  ${DIM}(models load on first connect; Ctrl-C to stop all)${NC}"
 echo
 wait

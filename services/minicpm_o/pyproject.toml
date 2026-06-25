@@ -1,0 +1,32 @@
+[project]
+name = "hearmeout-minicpm-o"
+version = "0.1.0"
+description = "Hear-Me-Out MiniCPM-o: speech LM bridge (GPU). Exposes PersonaPlex's binary tag WS protocol on :8000 while driving openbmb/MiniCPM-o internally."
+requires-python = ">=3.11,<3.12"
+dependencies = [
+    "torch==2.4.0",
+    "torchaudio==2.4.0",
+    "transformers>=4.51",        # Qwen3 backbone in MiniCPM-o 4.5 needs >=4.51
+    "aiohttp>=3.10",
+    "sphn>=0.1.4,<0.2",          # Opus codec; 0.2+ removed OpusStreamWriter.read_bytes
+    "librosa==0.10.2",           # 24k<->16k resampling, audio IO
+    "soundfile==0.12.1",
+    "numpy==1.26.4",
+    "silero-vad>=5.1",           # streaming turn detection (VADIterator)
+    "vector-quantize-pytorch",   # MiniCPM-o TTS (CosyVoice2) component
+    "vocos",                     # MiniCPM-o TTS vocoder
+    "huggingface-hub>=0.34,<1.0",
+    "hf-transfer>=0.1.8",
+]
+
+# trust_remote_code pulls MiniCPM-o's modeling code on first load; if it imports a
+# module not listed above, uv sync will fail — add the missing dep here and re-sync.
+
+[[tool.uv.index]]
+name = "pytorch-cu121"
+url = "https://download.pytorch.org/whl/cu121"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu121" }
+torchaudio = { index = "pytorch-cu121" }
