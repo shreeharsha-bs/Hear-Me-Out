@@ -18,7 +18,6 @@ dependencies = [
     "librosa==0.9.0",            # 24k->16k mic resampling + ref-audio IO; pinned by minicpmo-utils
     "setuptools<81",             # librosa 0.9.0 imports pkg_resources at load; setuptools>=81 removed it
     "numpy",                     # version driven by minicpmo-utils/librosa
-    "silero-vad>=5.1",           # streaming turn detection (VADIterator)
     "huggingface-hub>=0.34,<1.0",
     "hf-transfer>=0.1.8",
 ]
