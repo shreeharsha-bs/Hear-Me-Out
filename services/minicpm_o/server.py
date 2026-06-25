@@ -138,58 +138,69 @@ class MiniCPMOEngine:
             is_last_chunk=True,
         )
 
-    def _run(self, pcm_16k: np.ndarray):
-        """Blocking: prefill one user turn (16kHz) in 1s chunks, then generate.
-
-        Returns (text, audio_24k float32) — audio is already at OPUS_SR.
-        """
-        total = len(pcm_16k)
-        num_chunks = (total + PREFILL_CHUNK - 1) // PREFILL_CHUNK
-        for ci in range(num_chunks):
-            start = ci * PREFILL_CHUNK
-            end = min((ci + 1) * PREFILL_CHUNK, total)
-            chunk = pcm_16k[start:end]
-            is_last = ci == num_chunks - 1
-            if is_last and len(chunk) < MIN_AUDIO_SAMPLES:
-                chunk = np.concatenate(
-                    [chunk, np.zeros(MIN_AUDIO_SAMPLES - len(chunk), dtype=chunk.dtype)]
+    def _run_stream(self, pcm_16k, loop, q, sentinel):
+        """Blocking worker: prefill one user turn (16kHz) in 1s chunks, then
+        generate, pushing each (text_chunk, audio_24k) onto the asyncio queue as
+        soon as the model yields it (low time-to-first-audio)."""
+        try:
+            total = len(pcm_16k)
+            num_chunks = (total + PREFILL_CHUNK - 1) // PREFILL_CHUNK
+            for ci in range(num_chunks):
+                start = ci * PREFILL_CHUNK
+                end = min((ci + 1) * PREFILL_CHUNK, total)
+                chunk = pcm_16k[start:end]
+                is_last = ci == num_chunks - 1
+                if is_last and len(chunk) < MIN_AUDIO_SAMPLES:
+                    chunk = np.concatenate(
+                        [chunk, np.zeros(MIN_AUDIO_SAMPLES - len(chunk), dtype=chunk.dtype)]
+                    )
+                self.model.streaming_prefill(
+                    session_id=self.SESSION_ID,
+                    msgs=[{"role": "user", "content": [chunk]}],
+                    omni_mode=False,
+                    is_last_chunk=is_last,
                 )
-            self.model.streaming_prefill(
-                session_id=self.SESSION_ID,
-                msgs=[{"role": "user", "content": [chunk]}],
-                omni_mode=False,
-                is_last_chunk=is_last,
-            )
 
-        iter_gen = self.model.streaming_generate(
-            session_id=self.SESSION_ID,
-            generate_audio=True,
-            use_tts_template=True,
-            enable_thinking=False,
-            do_sample=True,
-            max_new_tokens=512,
-            length_penalty=1.1,  # model card's suggestion for realtime speech
-        )
-        audios = []
-        text = ""
-        for wav_chunk, text_chunk in iter_gen:
-            audios.append(wav_chunk)
-            text += text_chunk
-        if audios:
-            wav = torch.cat(audios, dim=-1)[0].float().cpu().numpy()
-        else:
-            wav = np.array([], dtype=np.float32)
-        return text, wav.astype(np.float32)
+            iter_gen = self.model.streaming_generate(
+                session_id=self.SESSION_ID,
+                generate_audio=True,
+                use_tts_template=True,
+                enable_thinking=False,
+                do_sample=True,
+                max_new_tokens=512,
+                length_penalty=1.1,  # model card's suggestion for realtime speech
+            )
+            for wav_chunk, text_chunk in iter_gen:
+                wav = wav_chunk
+                if isinstance(wav, torch.Tensor):
+                    wav = wav.squeeze().float().cpu().numpy()
+                loop.call_soon_threadsafe(
+                    q.put_nowait, (text_chunk, np.asarray(wav, dtype=np.float32))
+                )
+        except Exception as e:
+            loop.call_soon_threadsafe(q.put_nowait, e)
+        finally:
+            loop.call_soon_threadsafe(q.put_nowait, sentinel)
 
     async def start_session(self, text_prompt: str):
         loop = asyncio.get_event_loop()
         async with self.lock:
             await loop.run_in_executor(None, self._start_session, text_prompt)
 
-    async def generate(self, pcm_16k: np.ndarray):
+    async def generate_stream(self, pcm_16k: np.ndarray):
+        """Async generator yielding (text_chunk, audio_24k float32) as produced."""
         loop = asyncio.get_event_loop()
+        q: asyncio.Queue = asyncio.Queue()
+        sentinel = object()
         async with self.lock:
-            return await loop.run_in_executor(None, self._run, pcm_16k)
+            loop.run_in_executor(None, self._run_stream, pcm_16k, loop, q, sentinel)
+            while True:
+                item = await q.get()
+                if item is sentinel:
+                    break
+                if isinstance(item, Exception):
+                    raise item
+                yield item
 
 
 engine: MiniCPMOEngine | None = None
@@ -228,16 +239,16 @@ async def handle_chat(request: web.Request) -> web.WebSocketResponse:
     # Buffers: 24kHz PCM straight from Opus, 16kHz PCM for VAD/model.
     pcm16_buf = np.array([], dtype=np.float32)      # awaiting VAD windowing
     speech_buf = np.array([], dtype=np.float32)     # current utterance (16kHz)
+    out_pcm_buf = np.array([], dtype=np.float32)    # reply PCM awaiting Opus framing
     in_speech = False
 
-    async def stream_reply(text: str, audio_24k: np.ndarray):
-        if text:
-            await ws.send_bytes(TAG_TEXT + text.encode("utf-8"))
-        # Push the reply audio through the Opus encoder in fixed frames.
-        buf = audio_24k
-        n = (len(buf) // OPUS_FRAME) * OPUS_FRAME
-        for i in range(0, n, OPUS_FRAME):
-            frame = np.ascontiguousarray(buf[i : i + OPUS_FRAME])
+    async def _send_opus(pcm: np.ndarray):
+        """Encode 24kHz PCM and send any complete Opus frames (0x01)."""
+        nonlocal out_pcm_buf
+        out_pcm_buf = np.concatenate([out_pcm_buf, pcm])
+        while len(out_pcm_buf) >= OPUS_FRAME:
+            frame = np.ascontiguousarray(out_pcm_buf[:OPUS_FRAME])
+            out_pcm_buf = out_pcm_buf[OPUS_FRAME:]
             opus_writer.append_pcm(frame)
             while True:
                 encoded = opus_writer.read_bytes()
@@ -245,6 +256,24 @@ async def handle_chat(request: web.Request) -> web.WebSocketResponse:
                     break
                 if not ws.closed:
                     await ws.send_bytes(TAG_AUDIO + encoded)
+
+    async def stream_reply(utterance: np.ndarray):
+        """Stream the reply chunk-by-chunk as the model produces it."""
+        nonlocal out_pcm_buf
+        out_pcm_buf = np.array([], dtype=np.float32)
+        async for text_chunk, audio_24k in engine.generate_stream(utterance):
+            if text_chunk and not ws.closed:
+                await ws.send_bytes(TAG_TEXT + text_chunk.encode("utf-8"))
+            if len(audio_24k):
+                await _send_opus(audio_24k)
+        # Flush the tail: pad the remainder up to one Opus frame.
+        if len(out_pcm_buf):
+            pad = (-len(out_pcm_buf)) % OPUS_FRAME
+            tail = out_pcm_buf
+            if pad:
+                tail = np.concatenate([tail, np.zeros(pad, dtype=np.float32)])
+            out_pcm_buf = np.array([], dtype=np.float32)  # clear before re-appending
+            await _send_opus(tail)
 
     async for msg in ws:
         if msg.type == web.WSMsgType.BINARY:
@@ -284,8 +313,7 @@ async def handle_chat(request: web.Request) -> web.WebSocketResponse:
                     if len(utterance) < MODEL_IN_SR // 4:  # <0.25s -> noise
                         continue
                     try:
-                        text, audio_24k = await engine.generate(utterance)
-                        await stream_reply(text, audio_24k)
+                        await stream_reply(utterance)
                     except Exception as e:
                         logger.error(f"[chat] generation error: {e}")
         elif msg.type in (web.WSMsgType.CLOSE, web.WSMsgType.ERROR):
