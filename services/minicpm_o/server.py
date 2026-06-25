@@ -59,6 +59,14 @@ OPUS_FRAME = 1920
 
 MODEL_ID = os.environ.get("MINICPM_O_MODEL", "openbmb/MiniCPM-o-4_5")
 
+# Speech tokens generated per ~1s chunk. This trades smoothness vs latency:
+#  - too low  -> the model emits less than 1s of audio per 1s chunk, the browser's
+#    playback buffer underruns and you hear "dip" pauses;
+#  - too high -> each generate() takes longer than the 1s chunk cadence, input backs
+#    up and lag accumulates.
+# Official example uses 20; tune MINICPM_SPEAK_TOKENS on the box to taste.
+SPEAK_TOKENS_PER_CHUNK = int(os.environ.get("MINICPM_SPEAK_TOKENS", "20"))
+
 # Reference audio that defines the assistant's voice (16kHz). MiniCPM-o clones this
 # voice for its replies. Override with MINICPM_REF_AUDIO; defaults to a repo recording.
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -140,7 +148,7 @@ class MiniCPMODuplexEngine:
                 )
                 result = self.model.streaming_generate(
                     prompt_wav_path=self.ref_audio_path,
-                    max_new_speak_tokens_per_chunk=20,
+                    max_new_speak_tokens_per_chunk=SPEAK_TOKENS_PER_CHUNK,
                     decode_mode="sampling",
                 )
                 text = result.get("text") or ""
