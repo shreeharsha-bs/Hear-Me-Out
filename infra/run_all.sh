@@ -88,10 +88,9 @@ sleep 2
 export FRONTEND_PATH SSL_DIR
 export WHISPER_MODEL="${WHISPER_MODEL:-small}"
 # MiniCPM-o (GGUF via llama.cpp-omni): point the bridge at the C++ engine + GGUF weights.
-# Q4_K_M ≈ 9GB VRAM, so X-VC can co-load and app-api keeps Whisper on GPU is fine — but
-# we still nudge it to CPU to leave maximum headroom.
+# Q4_K_M ≈ 9GB VRAM on a 24GB card, so there's plenty of headroom — app-api's Whisper
+# stays on GPU (faster), and X-VC can co-load. (Override WHISPER_DEVICE=cpu if ever tight.)
 if [ "$SPEECH_LM_ENGINE" = "minicpm_o" ]; then
-    export WHISPER_DEVICE="${WHISPER_DEVICE:-cpu}"
     export LLAMA_OMNI_ROOT="${LLAMA_OMNI_ROOT:-$WORKSPACE/llama.cpp-omni}"
     export LLAMA_OMNI_BIN="${LLAMA_OMNI_BIN:-$LLAMA_OMNI_ROOT/build/bin/llama-server}"
     export MINICPM_O_GGUF_DIR="${MINICPM_O_GGUF_DIR:-$WORKSPACE/models/minicpm-o-gguf}"
