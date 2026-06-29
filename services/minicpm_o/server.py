@@ -266,29 +266,45 @@ class LlamaOmni:
         return "".join(texts), is_listen
 
     def collect_new_audio(self) -> np.ndarray | None:
-        """Scan <output_dir>/tts_wav for new wav_N.wav (24k float32); concat new ones."""
-        d = os.path.join(OUTPUT_DIR, "tts_wav")
-        if not os.path.isdir(d):
-            return None
-        wavs = sorted(
-            (f for f in os.listdir(d) if f.startswith("wav_") and f.endswith(".wav")),
-            key=lambda f: int(re.search(r"wav_(\d+)", f).group(1)) if re.search(r"wav_(\d+)", f) else 0,
-        )
-        new = [f for f in wavs if f not in self.sent_wavs]
-        if not new:
-            return None
+        """Scan for new wav_N.wav (24k float32) and concat. The C++ server writes either to
+        <output_dir>/tts_wav/ (duplex) or per-round <output_dir>/round_NNN/tts_wav/, so we
+        scan both. Sent files are tracked by full path."""
+        dirs = []
+        direct = os.path.join(OUTPUT_DIR, "tts_wav")
+        if os.path.isdir(direct):
+            dirs.append(direct)
+        try:
+            for rd in sorted(os.listdir(OUTPUT_DIR)):
+                p = os.path.join(OUTPUT_DIR, rd, "tts_wav")
+                if rd.startswith("round_") and os.path.isdir(p):
+                    dirs.append(p)
+        except FileNotFoundError:
+            pass
+
+        def _idx(name):
+            m = re.search(r"wav_(\d+)", name)
+            return int(m.group(1)) if m else 0
+
         chunks = []
-        for f in new:
-            try:
-                data, _sr = sf.read(os.path.join(d, f), dtype="float32")
-                if len(data):
-                    if data.ndim > 1:
-                        data = data.mean(axis=1)
-                    chunks.append(data)
-                self.sent_wavs.add(f)
-            except Exception:
-                pass
-        return np.concatenate(chunks) if chunks else None
+        for d in dirs:
+            for f in sorted((x for x in os.listdir(d) if x.startswith("wav_") and x.endswith(".wav")), key=_idx):
+                key = os.path.join(d, f)
+                if key in self.sent_wavs:
+                    continue
+                try:
+                    data, _sr = sf.read(key, dtype="float32")
+                    if len(data):
+                        if data.ndim > 1:
+                            data = data.mean(axis=1)
+                        chunks.append(data)
+                    self.sent_wavs.add(key)
+                except Exception as e:
+                    logger.warning("[audio] read %s failed: %s", key, e)
+        if chunks:
+            logger.info("[audio] %d new wav(s), %d samples (dirs=%s)",
+                        len(chunks), sum(len(c) for c in chunks), [os.path.relpath(d, OUTPUT_DIR) for d in dirs])
+            return np.concatenate(chunks)
+        return None
 
     def break_(self, reason: str):
         try:
@@ -332,13 +348,17 @@ async def handle_chat(request: web.Request) -> web.WebSocketResponse:
 
         def worker():
             try:
+                n = 0
                 while True:
                     chunk = in_q.get()
                     if chunk is None:
                         break
+                    n += 1
                     omni.prefill(chunk)
-                    text, _is_listen = omni.decode()
+                    text, is_listen = omni.decode()
                     audio = omni.collect_new_audio()
+                    logger.info("[chunk %d] is_listen=%s text=%r audio=%d", n, is_listen,
+                                (text or "")[:60], 0 if audio is None else len(audio))
                     loop.call_soon_threadsafe(out_q.put_nowait, (text, audio))
             except Exception as e:
                 loop.call_soon_threadsafe(out_q.put_nowait, e)
