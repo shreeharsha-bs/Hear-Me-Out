@@ -187,47 +187,50 @@ phase_build_omni() {
     echo "llama-server already built"; return 0
   fi
 
-  # Compiling CUDA needs a COMPLETE toolkit in one tree: nvcc + cuda_runtime.h (headers)
-  # + libcudart.so (dev symlink). This box has none usable (system CUDA is headerless;
-  # conda base is version-mixed), so we keep our OWN dedicated conda env just for the
-  # build — base env + the torch services stay untouched. Both setup.sh and run_all.sh
-  # auto-discover it at $HMO_CUDA_ENV, so no CUDA_HOME needs to be passed by hand.
-  local root="" c hdr lcc
-  # _cuda_complete <root>: succeeds if it has nvcc + headers + libcudart.so; sets lcc.
-  _cuda_complete() {
-    local r="$1"
-    [ -n "$r" ] && [ -x "$r/bin/nvcc" ] || return 1
-    hdr="$(find "$r" -name cuda_runtime.h 2>/dev/null | grep -v site-packages | head -1 || true)"
-    lcc="$(find "$r" -name 'libcudart.so' 2>/dev/null | grep -v site-packages | head -1 || true)"
-    [ -n "$hdr" ] && [ -n "$lcc" ]
-  }
-  for c in "$CUDA_HOME" "$HMO_CUDA_ENV" /usr/local/cuda /usr/local/cuda-12.0; do
-    if _cuda_complete "$c"; then root="$c"; break; fi
-  done
+  # Compiling CUDA needs a COMPLETE toolkit (nvcc + headers + libcudart.so) whose version
+  # is <= the driver's CUDA version — else kernels fail at runtime with "device kernel image
+  # is invalid". conda ignores the version pin (gives 12.9), and the pip nvcc wheel ships no
+  # nvcc front-end — so we install NVIDIA's official CUDA runfile toolkit (rootless, to a
+  # user dir, exact version). Default 12.2.2 (driver-matched here); override CUDA_RUNFILE_URL.
+  local cver="${CUDA_TOOLKIT_VERSION:-12.2}"
+  local CUDA_TK="$WORKSPACE/cuda-$cver"
+  local runfile_url="${CUDA_RUNFILE_URL:-https://developer.download.nvidia.com/compute/cuda/12.2.2/local_installers/cuda_12.2.2_535.104.05_linux.run}"
 
-  # None complete -> create the dedicated env (one-time, ~2GB; base env untouched).
-  # Pinned to a single version <= driver max (default 12.0; override CUDA_TOOLKIT_VERSION).
-  if [ -z "$root" ] && [ "${SKIP_CUDA_INSTALL:-0}" != "1" ] && command -v conda >/dev/null 2>&1 && [ -n "$HMO_CUDA_ENV" ]; then
-    local cver="${CUDA_TOOLKIT_VERSION:-12.0}"
-    echo "Provisioning dedicated CUDA $cver toolkit env at $HMO_CUDA_ENV (one-time, ~2GB; base env untouched)..."
-    conda create -y -n "$HMO_CUDA_ENV_NAME" -c nvidia "cuda-toolkit=$cver" || echo "WARN: conda create failed"
-    _cuda_complete "$HMO_CUDA_ENV" && root="$HMO_CUDA_ENV"
+  if [ -x "$CUDA_TK/bin/nvcc" ]; then
+    echo "CUDA $cver toolkit present at $CUDA_TK"
+  elif [ -n "$CUDA_HOME" ] && [ -x "$CUDA_HOME/bin/nvcc" ]; then
+    CUDA_TK="$CUDA_HOME"; echo "Using CUDA toolkit from CUDA_HOME=$CUDA_HOME"
+  else
+    echo "Installing CUDA $cver toolkit (runfile, rootless -> $CUDA_TK; one-time, ~4GB)..."
+    mkdir -p "$WORKSPACE/tmp"
+    local rf="$WORKSPACE/cuda_runfile.run"
+    wget -q "$runfile_url" -O "$rf" || { echo "ERROR: CUDA runfile download failed ($runfile_url)"; return 1; }
+    sh "$rf" --silent --toolkit --toolkitpath="$CUDA_TK" \
+        --tmpdir="$WORKSPACE/tmp" --override --no-man-page || true
+    rm -f "$rf"
   fi
-
-  if [ -z "$root" ]; then
-    echo "ERROR: no complete CUDA toolkit (nvcc + cuda_runtime.h + libcudart.so)."
-    echo "       Tried: \$CUDA_HOME, $HMO_CUDA_ENV, /usr/local/cuda*."
-    echo "       Create one with:  conda create -y -n $HMO_CUDA_ENV_NAME -c nvidia cuda-toolkit=${CUDA_TOOLKIT_VERSION:-12.0}"
-    echo "       (or set CUDA_HOME to a complete toolkit) and re-run setup."
+  if [ ! -x "$CUDA_TK/bin/nvcc" ]; then
+    echo "ERROR: CUDA toolkit not available at $CUDA_TK/bin/nvcc."
+    echo "       Set CUDA_RUNFILE_URL to a CUDA <= driver runfile, or CUDA_HOME to a toolkit, and re-run."
     return 1
   fi
+  local root="$CUDA_TK"
+  local lcc; lcc="$(find "$root" -name 'libcudart.so*' 2>/dev/null | head -1 || true)"
 
-  echo "CUDA toolkit: root=$root nvcc=$root/bin/nvcc cudart=$lcc — building with GGML_CUDA"
-  export LD_LIBRARY_PATH="$(dirname "$lcc"):${LD_LIBRARY_PATH:-}"  # build + runtime
+  # Force the GPU's compute capability so kernels get native SASS (RTX 3090 -> 86).
+  local arch="${CUDA_ARCH:-}"
+  if [ -z "$arch" ] && command -v nvidia-smi >/dev/null 2>&1; then
+    arch="$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader 2>/dev/null | head -1 | tr -d '. ')"
+  fi
+  [ -n "$arch" ] || arch="86"
+
+  echo "CUDA toolkit: root=$root nvcc=$root/bin/nvcc arch=$arch — building with GGML_CUDA"
+  export LD_LIBRARY_PATH="$root/lib64:${LD_LIBRARY_PATH:-}"  # build + runtime
   rm -rf "$LLAMA_OMNI_DIR/build"   # wipe any poisoned cache from a failed configure
   ( cd "$LLAMA_OMNI_DIR" \
       && cmake -B build -DCMAKE_BUILD_TYPE=Release -DGGML_CUDA=ON \
            -DCUDAToolkit_ROOT="$root" -DCMAKE_CUDA_COMPILER="$root/bin/nvcc" \
+           -DCMAKE_CUDA_ARCHITECTURES="$arch" \
       && cmake --build build --target llama-server -j"$(nproc)" )
 }
 

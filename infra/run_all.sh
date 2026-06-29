@@ -98,19 +98,17 @@ if [ "$SPEECH_LM_ENGINE" = "minicpm_o" ]; then
     export MINICPM_O_CPP_PORT="${MINICPM_O_CPP_PORT:-19080}"
     export MINICPM_REF_AUDIO="${MINICPM_REF_AUDIO:-$HEARMEOUT_DIR/recordings/Target_2.wav}"
     export MINICPM_O_OUTPUT_DIR="${MINICPM_O_OUTPUT_DIR:-$SERVICES/minicpm_o/_omni_out}"
-    # llama-server (CUDA build) needs its cudart at runtime. Build a lib path but do NOT
-    # export it globally — that would leak the build CUDA libs onto app-api / the VC engine,
-    # whose torch-cu121 venvs bundle their own CUDA and must not be shadowed. Applied only
-    # to the MiniCPM-o launch below. Auto-discovers the dedicated build env (same one
-    # setup.sh creates), so no CUDA_HOME needs to be passed.
-    _hmo_cuda_env=""
-    command -v conda >/dev/null 2>&1 && _hmo_cuda_env="$(conda info --base 2>/dev/null)/envs/${HMO_CUDA_ENV_NAME:-hmo-cuda}"
+    # llama-server (CUDA build) needs its cudart at runtime — and it MUST match the toolkit
+    # it was built with (the runfile toolkit at $WORKSPACE/cuda-*, which is <= the driver).
+    # Build a lib path, applied ONLY to the MiniCPM-o launch (not exported globally), so it
+    # never shadows app-api / the VC engine's torch-cu121 bundled CUDA. Toolkit libs go
+    # FIRST; $CUDA_HOME (if set) wins over everything.
     MINICPM_O_LD=""
-    for _d in "${CUDA_HOME:+$CUDA_HOME/lib64}" "${CUDA_HOME:+$CUDA_HOME/targets/x86_64-linux/lib}" \
-              "${_hmo_cuda_env:+$_hmo_cuda_env/lib}" "${_hmo_cuda_env:+$_hmo_cuda_env/targets/x86_64-linux/lib}" \
-              /usr/local/cuda/lib64 /usr/local/cuda/targets/x86_64-linux/lib; do
-        [ -n "$_d" ] && [ -d "$_d" ] && MINICPM_O_LD="$_d:$MINICPM_O_LD"
-    done
+    _add_ld() { [ -n "$1" ] && [ -d "$1" ] && MINICPM_O_LD="${MINICPM_O_LD:+$MINICPM_O_LD:}$1"; }
+    _add_ld "${CUDA_HOME:+$CUDA_HOME/lib64}"
+    for _d in "$WORKSPACE"/cuda-*/lib64; do _add_ld "$_d"; done   # runfile toolkit(s)
+    _add_ld /usr/local/cuda/lib64
+    _add_ld /usr/local/cuda/targets/x86_64-linux/lib
     pkill -f "llama-server" 2>/dev/null || true   # clear a stale C++ engine
 fi
 export VC_CHECKPOINT_PATH="$WORKSPACE/models/seed-vc/DiT_uvit_tat_xlsr_ema.pth"
