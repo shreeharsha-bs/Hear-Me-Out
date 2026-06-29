@@ -15,6 +15,7 @@ playwright/.cache/
 blob-report/
 
 models/
+services/minicpm_o/_omni_out/
 .opencode/
 .agents/
 skills-lock.json

@@ -93,6 +93,10 @@ fi
 MEANVC_URL="https://github.com/ASLP-lab/MeanVC.git"   # cloned for its speaker_verification source
 XVC_URL="https://github.com/Jerrister/X-VC.git"
 XVC_COMMIT="49df8c591eafc48b096e466d96f9839f9c0dd739"
+# llama.cpp-omni: C++ engine that runs MiniCPM-o GGUF with full-duplex speech.
+# The HTTP `llama-server` target lives on the feat/web-demo branch.
+LLAMA_OMNI_URL="https://github.com/tc-mb/llama.cpp-omni.git"
+LLAMA_OMNI_BRANCH="feat/web-demo"
 
 # Derived paths. Export so helper scripts (generate-ssl.sh, download-meanvc-sv.sh)
 # and `uv run` downloads honor the chosen workspace.
@@ -106,6 +110,8 @@ REPO_DIR="$WORKSPACE/Hear-Me-Out"
 MODELS_DIR="$WORKSPACE/models"
 MEANVC_DIR="$WORKSPACE/MeanVC"
 XVC_DIR="$WORKSPACE/X-VC"
+LLAMA_OMNI_DIR="$WORKSPACE/llama.cpp-omni"
+MO_GGUF_DIR="$MODELS_DIR/minicpm-o-gguf"
 SERVICES="$REPO_DIR/services"
 
 echo; hr
@@ -131,8 +137,8 @@ phase_system() {
   export DEBIAN_FRONTEND=noninteractive
   sudo apt-get update -qq
   sudo apt-get install -y -qq --no-install-recommends \
-      build-essential pkg-config git wget curl ca-certificates \
-      ffmpeg libsndfile1 libopus-dev libsoxr-dev openssl nodejs npm
+      build-essential cmake pkg-config git wget curl ca-certificates \
+      ffmpeg libsndfile1 libopus-dev libsoxr-dev openssl nodejs npm libcurl4-openssl-dev
 }
 
 phase_workspace() {
@@ -155,6 +161,24 @@ phase_clone() {
     mkdir -p "$XVC_DIR/ckpts" "$XVC_DIR/pretrained"
   fi
   # PersonaPlex's moshi is NOT cloned — services/personaplex pulls it via uv git source.
+  # llama.cpp-omni — C++ engine for MiniCPM-o GGUF (built in phase_build_omni).
+  if [ -d "$LLAMA_OMNI_DIR/.git" ]; then
+    echo "llama.cpp-omni exists"
+  else
+    git clone --branch "$LLAMA_OMNI_BRANCH" --depth 1 "$LLAMA_OMNI_URL" "$LLAMA_OMNI_DIR"
+  fi
+}
+
+phase_build_omni() {
+  # Build only the HTTP server target. CMake auto-enables CUDA when nvcc is present.
+  if [ -x "$LLAMA_OMNI_DIR/build/bin/llama-server" ]; then
+    echo "llama-server already built"; return 0
+  fi
+  local cuda_flag=""
+  command -v nvcc >/dev/null 2>&1 && cuda_flag="-DGGML_CUDA=ON"
+  ( cd "$LLAMA_OMNI_DIR" \
+      && cmake -B build -DCMAKE_BUILD_TYPE=Release $cuda_flag \
+      && cmake --build build --target llama-server -j"$(nproc)" )
 }
 
 phase_sync() {
@@ -176,10 +200,18 @@ phase_models() {
   else
     echo "WARN: HF_TOKEN not set — skipping gated PersonaPlex model."
   fi
-  # MiniCPM-o 4.5 (public, ~18GB) — the alternative :8000 speech LM (SPEECH_LM_ENGINE=minicpm_o).
-  echo "Downloading MiniCPM-o 4.5 (~18GB)..."
-  uv run --project "$SERVICES/minicpm_o" python -c "from huggingface_hub import snapshot_download; snapshot_download('openbmb/MiniCPM-o-4_5'); print('MiniCPM-o 4.5 ready.')" \
-    || echo "WARN: MiniCPM-o download failed; rerun setup or fetch openbmb/MiniCPM-o-4_5 manually."
+  # MiniCPM-o 4.5 GGUF (public) — the alternative :8000 speech LM, run by llama.cpp-omni.
+  # Audio-only subset (~7.8GB): LLM Q4_K_M + audio/ + tts/ + token2wav-gguf/ (skip vision/).
+  # Downloaded via app_api's venv (it has huggingface_hub; minicpm_o's venv is torch-free).
+  if [ ! -f "$MO_GGUF_DIR/MiniCPM-o-4_5-Q4_K_M.gguf" ]; then
+    echo "Downloading MiniCPM-o 4.5 GGUF subset (~7.8GB)..."
+    uv run --project "$SERVICES/app_api" python -c "
+from huggingface_hub import snapshot_download
+snapshot_download('openbmb/MiniCPM-o-4_5-gguf', local_dir='$MO_GGUF_DIR',
+    allow_patterns=['MiniCPM-o-4_5-Q4_K_M.gguf','audio/*','tts/*','token2wav-gguf/*'])
+print('MiniCPM-o GGUF ready.')" \
+      || echo "WARN: MiniCPM-o GGUF download failed; rerun or fetch openbmb/MiniCPM-o-4_5-gguf manually."
+  else echo "MiniCPM-o GGUF present."; fi
   local SEEDVC_CKPT="$MODELS_DIR/seed-vc/DiT_uvit_tat_xlsr_ema.pth"
   if [ ! -f "$SEEDVC_CKPT" ]; then
     echo "Downloading Seed-VC checkpoint..."
@@ -239,6 +271,7 @@ if ! $MODELS_ONLY; then
   add_step phase_workspace "Create workspace"
   add_step phase_clone     "Clone repos + submodules"
   add_step phase_sync      "Resolve per-service deps (uv sync)"
+  add_step phase_build_omni "Build llama.cpp-omni (MiniCPM-o GGUF engine)"
 fi
 add_step phase_models  "Download models"
 add_step phase_runtime "Runtime setup (SSL, speaker-verification)"

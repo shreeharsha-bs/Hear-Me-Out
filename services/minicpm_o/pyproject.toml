@@ -1,35 +1,16 @@
 [project]
 name = "hearmeout-minicpm-o"
 version = "0.1.0"
-description = "Hear-Me-Out MiniCPM-o: speech LM bridge (GPU). Exposes PersonaPlex's binary tag WS protocol on :8000 while driving openbmb/MiniCPM-o internally."
-requires-python = ">=3.11,<3.12"
+description = "Hear-Me-Out MiniCPM-o bridge (GPU). Exposes PersonaPlex's binary-tag WS protocol on :8000 while driving the llama.cpp-omni C++ engine (GGUF) over HTTP/SSE. No torch/transformers — inference runs in the C++ server."
+requires-python = ">=3.11,<3.13"
 dependencies = [
-    # MiniCPM-o 4.5 official requirements (model card "Half-Duplex Realtime Speech
-    # Conversation"): transformers==4.51.0, accelerate, torch>=2.3,<=2.8,
-    # torchaudio<=2.8, and minicpmo-utils[all] (pulls its TTS/vocoder deps).
-    "torch==2.4.0",
-    "torchaudio==2.4.0",
-    "transformers==4.51.0",
-    "accelerate",
-    "minicpmo-utils[all]>=1.0.5",
-    # Our bridge server.
-    "aiohttp>=3.10",
-    "sphn>=0.1.4,<0.2",          # Opus codec; 0.2+ removed OpusStreamWriter.read_bytes
-    "librosa==0.9.0",            # 24k->16k mic resampling + ref-audio IO; pinned by minicpmo-utils
-    "setuptools<81",             # librosa 0.9.0 imports pkg_resources at load; setuptools>=81 removed it
-    "numpy",                     # version driven by minicpmo-utils/librosa
-    "huggingface-hub>=0.34,<1.0",
-    "hf-transfer>=0.1.8",
+    "aiohttp>=3.10",       # WS server to the browser
+    "requests>=2.31",      # HTTP/SSE client to llama-omni-server
+    "sphn>=0.1.4,<0.2",    # Opus codec; 0.2+ removed OpusStreamWriter.read_bytes
+    "soundfile>=0.12",     # write 16k prefill WAVs + read 24k TTS WAVs
+    "soxr>=0.3",           # 24k->16k mic resampling (light, no librosa/numba)
+    "numpy>=1.26,<2",
 ]
 
-# trust_remote_code pulls MiniCPM-o's modeling code on first load; if it imports a
-# module not provided by minicpmo-utils[all], uv sync will fail — add it here and re-sync.
-
-[[tool.uv.index]]
-name = "pytorch-cu121"
-url = "https://download.pytorch.org/whl/cu121"
-explicit = true
-
-[tool.uv.sources]
-torch = { index = "pytorch-cu121" }
-torchaudio = { index = "pytorch-cu121" }
+# No PyTorch / transformers / minicpmo-utils: the 9B model runs inside the
+# llama.cpp-omni C++ binary (built by infra/setup.sh), so this venv stays tiny.
