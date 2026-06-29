@@ -198,8 +198,28 @@ phase_build_omni() {
     return 1
   fi
   nvcc_bin="$cuda_home/bin/nvcc"; [ -x "$nvcc_bin" ] || nvcc_bin="$(command -v nvcc)"
+
+  # CMake's find_package(CUDAToolkit) derives the toolkit root from the *compiler*
+  # directory when the CUDA language is enabled. Here nvcc is conda's (/opt/conda,
+  # no cudart) while the libs live under /usr/local/cuda — so CMake looks in the wrong
+  # place and "CUDA_CUDART" goes missing. Build a shim toolkit that puts conda's nvcc
+  # next to the real toolkit's lib64/include so the derived root is complete. No root needed.
+  if [ ! -x "$cuda_home/bin/nvcc" ]; then
+    local shim="$WORKSPACE/.cuda-shim"
+    rm -rf "$shim"; mkdir -p "$shim/bin"
+    ln -s "$nvcc_bin" "$shim/bin/nvcc"
+    local sub
+    for sub in lib64 lib include targets nvvm; do
+      [ -e "$cuda_home/$sub" ] && ln -s "$cuda_home/$sub" "$shim/$sub"
+    done
+    cuda_home="$shim"; nvcc_bin="$shim/bin/nvcc"
+    echo "Built CUDA shim toolkit at $shim (conda nvcc + system libs)"
+  fi
+
   echo "CUDA toolkit: root=$cuda_home nvcc=$nvcc_bin cudart=$libcudart — building with GGML_CUDA"
   export LD_LIBRARY_PATH="$(dirname "$libcudart"):${LD_LIBRARY_PATH:-}"  # build + runtime
+  # Wipe any poisoned cache from a previous failed configure before reconfiguring.
+  rm -rf "$LLAMA_OMNI_DIR/build"
   ( cd "$LLAMA_OMNI_DIR" \
       && cmake -B build -DCMAKE_BUILD_TYPE=Release -DGGML_CUDA=ON \
            -DCUDAToolkit_ROOT="$cuda_home" -DCMAKE_CUDA_COMPILER="$nvcc_bin" \
@@ -317,6 +337,11 @@ print_header() {
   echo -e "${BOLD}│        Hear-Me-Out — installing backend      │${NC}"
   echo -e "${BOLD}╰──────────────────────────────────────────────╯${NC}"
   echo -e "  ${DIM}workspace${NC}  $WORKSPACE"
+  # Show the exact code version this setup.sh came from, for debugging across runs.
+  local _src_repo _commit
+  _src_repo="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" 2>/dev/null && pwd)"
+  _commit="$(git -C "$_src_repo" log -1 --pretty='%h %s (%cr)' 2>/dev/null)"
+  [ -n "$_commit" ] && echo -e "  ${DIM}commit${NC}     $_commit"
   if command -v nvidia-smi >/dev/null 2>&1; then
     echo -e "  ${DIM}gpu${NC}        $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -1)"
   fi
