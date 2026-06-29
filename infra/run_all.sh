@@ -78,6 +78,7 @@ export NO_TORCH_COMPILE=1
 # Kill stale services.
 pkill -f "personaplex/entrypoint" 2>/dev/null || true
 pkill -f "minicpm_o/server.py" 2>/dev/null || true
+pkill -f "llama-server" 2>/dev/null || true
 pkill -f "app:create_app" 2>/dev/null || true
 pkill -f "meanvc/server.py" 2>/dev/null || true
 pkill -f "xvc/server.py" 2>/dev/null || true
@@ -86,6 +87,19 @@ sleep 2
 # Shared env consumed by the service processes.
 export FRONTEND_PATH SSL_DIR
 export WHISPER_MODEL="${WHISPER_MODEL:-small}"
+# MiniCPM-o (GGUF via llama.cpp-omni): point the bridge at the C++ engine + GGUF weights.
+# Q4_K_M ≈ 9GB VRAM on a 24GB card, so there's plenty of headroom — app-api's Whisper
+# stays on GPU (faster), and X-VC can co-load. (Override WHISPER_DEVICE=cpu if ever tight.)
+if [ "$SPEECH_LM_ENGINE" = "minicpm_o" ]; then
+    export LLAMA_OMNI_ROOT="${LLAMA_OMNI_ROOT:-$WORKSPACE/llama.cpp-omni}"
+    export LLAMA_OMNI_BIN="${LLAMA_OMNI_BIN:-$LLAMA_OMNI_ROOT/build/bin/llama-server}"
+    export MINICPM_O_GGUF_DIR="${MINICPM_O_GGUF_DIR:-$WORKSPACE/models/minicpm-o-gguf}"
+    export MINICPM_O_LLM="${MINICPM_O_LLM:-MiniCPM-o-4_5-Q4_K_M.gguf}"
+    export MINICPM_O_CPP_PORT="${MINICPM_O_CPP_PORT:-19080}"
+    export MINICPM_REF_AUDIO="${MINICPM_REF_AUDIO:-$HEARMEOUT_DIR/recordings/Target_2.wav}"
+    export MINICPM_O_OUTPUT_DIR="${MINICPM_O_OUTPUT_DIR:-$SERVICES/minicpm_o/_omni_out}"
+    pkill -f "llama-server" 2>/dev/null || true   # clear a stale C++ engine
+fi
 export VC_CHECKPOINT_PATH="$WORKSPACE/models/seed-vc/DiT_uvit_tat_xlsr_ema.pth"
 export VC_MODEL_CONFIG="${VC_MODEL_CONFIG:-configs/presets/config_dit_mel_seed_uvit_xlsr_tiny.yml}"
 export PERSONAPLEX_PROXY_HOST="${PERSONAPLEX_PROXY_HOST:-127.0.0.1}"

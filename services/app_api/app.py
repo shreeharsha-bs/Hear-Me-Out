@@ -49,8 +49,12 @@ def _init_whisper():
     if whisper_model is None:
         from faster_whisper import WhisperModel
 
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-        compute = "int8_float16" if torch.cuda.is_available() else "int8"
+        # WHISPER_DEVICE forces CPU/GPU (run_all.sh sets cpu when a heavy speech LM
+        # like MiniCPM-o needs the whole GPU). Default: GPU if available.
+        device = os.environ.get(
+            "WHISPER_DEVICE", "cuda" if torch.cuda.is_available() else "cpu"
+        )
+        compute = "int8_float16" if device == "cuda" else "int8"
         model_size = os.environ.get("WHISPER_MODEL", "small")
         whisper_model = WhisperModel(model_size, device=device, compute_type=compute)
         logger.info(f"Whisper model '{model_size}' loaded on {device}")
