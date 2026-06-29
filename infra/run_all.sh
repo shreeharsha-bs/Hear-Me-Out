@@ -98,9 +98,14 @@ if [ "$SPEECH_LM_ENGINE" = "minicpm_o" ]; then
     export MINICPM_O_CPP_PORT="${MINICPM_O_CPP_PORT:-19080}"
     export MINICPM_REF_AUDIO="${MINICPM_REF_AUDIO:-$HEARMEOUT_DIR/recordings/Target_2.wav}"
     export MINICPM_O_OUTPUT_DIR="${MINICPM_O_OUTPUT_DIR:-$SERVICES/minicpm_o/_omni_out}"
-    # llama-server (CUDA) needs libcudart.so.12 at runtime — add the system toolkit libs.
-    for _d in /usr/local/cuda/lib64 /usr/local/cuda/targets/x86_64-linux/lib; do
-        [ -d "$_d" ] && export LD_LIBRARY_PATH="$_d:${LD_LIBRARY_PATH:-}"
+    # llama-server (CUDA 12.0 build) needs its cudart at runtime. Build a lib path but
+    # do NOT export it globally — that would leak CUDA-12.0 libs onto app-api / the VC
+    # engine, whose torch-cu121 venvs bundle their own CUDA and must not be shadowed.
+    # Applied only to the MiniCPM-o launch below (CUDA_HOME = the build toolkit, if set).
+    MINICPM_O_LD=""
+    for _d in "${CUDA_HOME:+$CUDA_HOME/lib64}" "${CUDA_HOME:+$CUDA_HOME/targets/x86_64-linux/lib}" \
+              /usr/local/cuda/lib64 /usr/local/cuda/targets/x86_64-linux/lib; do
+        [ -n "$_d" ] && [ -d "$_d" ] && MINICPM_O_LD="$_d:$MINICPM_O_LD"
     done
     pkill -f "llama-server" 2>/dev/null || true   # clear a stale C++ engine
 fi
@@ -114,7 +119,9 @@ echo -e "${DIM}─────────────────────�
 # --- Speech LM :8000 ---
 if [ "$SPEECH_LM_ENGINE" = "minicpm_o" ]; then
     echo -e "  ${CYAN}▶${NC} MiniCPM-o     :8000  ${DIM}(GPU)${NC}"
-    ( cd "$SERVICES/minicpm_o" && exec uv run python server.py \
+    # LD_LIBRARY_PATH scoped to THIS process only (not app-api / VC engine).
+    ( cd "$SERVICES/minicpm_o" && LD_LIBRARY_PATH="${MINICPM_O_LD}${LD_LIBRARY_PATH:-}" \
+        exec uv run python server.py \
         --host 0.0.0.0 --port 8000 --device cuda --ssl "$SSL_DIR" ) &
     PID1=$!; LM_LABEL="MiniCPM-o"
 else
