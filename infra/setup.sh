@@ -205,11 +205,18 @@ phase_build_omni() {
     if _cuda_complete "$c"; then root="$c"; break; fi
   done
 
+  # The toolkit MUST be <= the driver's CUDA version, or kernels fail at runtime with
+  # "device kernel image is invalid" (a 12.9 toolkit's cubin won't load on a 12.2 driver).
+  # Auto-pick the version from the driver (nvidia-smi header) unless overridden.
+  local cver="${CUDA_TOOLKIT_VERSION:-}"
+  if [ -z "$cver" ] && command -v nvidia-smi >/dev/null 2>&1; then
+    cver="$(nvidia-smi 2>/dev/null | grep -oE 'CUDA Version: [0-9]+\.[0-9]+' | grep -oE '[0-9]+\.[0-9]+' | head -1)"
+  fi
+  [ -n "$cver" ] || cver="12.2"
+
   # None complete -> create the dedicated env (one-time, ~2GB; base env untouched).
-  # Pinned to a single version <= driver max (default 12.0; override CUDA_TOOLKIT_VERSION).
   if [ -z "$root" ] && [ "${SKIP_CUDA_INSTALL:-0}" != "1" ] && command -v conda >/dev/null 2>&1 && [ -n "$HMO_CUDA_ENV" ]; then
-    local cver="${CUDA_TOOLKIT_VERSION:-12.0}"
-    echo "Provisioning dedicated CUDA $cver toolkit env at $HMO_CUDA_ENV (one-time, ~2GB; base env untouched)..."
+    echo "Provisioning dedicated CUDA $cver toolkit env at $HMO_CUDA_ENV (driver-matched; one-time, ~2GB; base env untouched)..."
     conda create -y -n "$HMO_CUDA_ENV_NAME" -c nvidia "cuda-toolkit=$cver" || echo "WARN: conda create failed"
     _cuda_complete "$HMO_CUDA_ENV" && root="$HMO_CUDA_ENV"
   fi
@@ -217,8 +224,8 @@ phase_build_omni() {
   if [ -z "$root" ]; then
     echo "ERROR: no complete CUDA toolkit (nvcc + cuda_runtime.h + libcudart.so)."
     echo "       Tried: \$CUDA_HOME, $HMO_CUDA_ENV, /usr/local/cuda*."
-    echo "       Create one with:  conda create -y -n $HMO_CUDA_ENV_NAME -c nvidia cuda-toolkit=${CUDA_TOOLKIT_VERSION:-12.0}"
-    echo "       (or set CUDA_HOME to a complete toolkit) and re-run setup."
+    echo "       Create one with:  conda create -y -n $HMO_CUDA_ENV_NAME -c nvidia cuda-toolkit=$cver"
+    echo "       (must be <= the driver's CUDA version; set CUDA_HOME to a complete toolkit) and re-run."
     return 1
   fi
 
