@@ -113,6 +113,11 @@ XVC_DIR="$WORKSPACE/X-VC"
 LLAMA_OMNI_DIR="$WORKSPACE/llama.cpp-omni"
 MO_GGUF_DIR="$MODELS_DIR/minicpm-o-gguf"
 SERVICES="$REPO_DIR/services"
+# Dedicated conda env holding the CUDA toolkit used to BUILD llama.cpp-omni (build-time
+# only; keeps the base env + torch services untouched). Auto-discovered, no CUDA_HOME needed.
+HMO_CUDA_ENV_NAME="${HMO_CUDA_ENV_NAME:-hmo-cuda}"
+HMO_CUDA_ENV=""
+command -v conda >/dev/null 2>&1 && HMO_CUDA_ENV="$(conda info --base 2>/dev/null)/envs/$HMO_CUDA_ENV_NAME"
 
 echo; hr
 echo -e "  ${BOLD}Workspace${NC}    : $WORKSPACE"
@@ -183,35 +188,36 @@ phase_build_omni() {
   fi
 
   # Compiling CUDA needs a COMPLETE toolkit in one tree: nvcc + cuda_runtime.h (headers)
-  # + libcudart.so (the unversioned dev symlink). This box's system CUDA has only
-  # versioned runtime .so's (no headers, no dev symlink) and conda has only nvcc — so we
-  # need a real toolkit. Search candidate roots for all three together; pip's nvidia
-  # wheels under site-packages are not a usable toolkit, so they're excluded.
+  # + libcudart.so (dev symlink). This box has none usable (system CUDA is headerless;
+  # conda base is version-mixed), so we keep our OWN dedicated conda env just for the
+  # build — base env + the torch services stay untouched. Both setup.sh and run_all.sh
+  # auto-discover it at $HMO_CUDA_ENV, so no CUDA_HOME needs to be passed by hand.
   local root="" c hdr lcc
-  for c in "$CUDA_HOME" "$CONDA_PREFIX" /opt/conda /usr/local/cuda /usr/local/cuda-12.0 /usr/local/cuda-12; do
-    [ -n "$c" ] && [ -x "$c/bin/nvcc" ] || continue
-    hdr="$(find "$c" -name cuda_runtime.h 2>/dev/null | grep -v site-packages | head -1 || true)"
-    lcc="$(find "$c" -name 'libcudart.so' 2>/dev/null | grep -v site-packages | head -1 || true)"
-    if [ -n "$hdr" ] && [ -n "$lcc" ]; then root="$c"; break; fi
+  # _cuda_complete <root>: succeeds if it has nvcc + headers + libcudart.so; sets lcc.
+  _cuda_complete() {
+    local r="$1"
+    [ -n "$r" ] && [ -x "$r/bin/nvcc" ] || return 1
+    hdr="$(find "$r" -name cuda_runtime.h 2>/dev/null | grep -v site-packages | head -1 || true)"
+    lcc="$(find "$r" -name 'libcudart.so' 2>/dev/null | grep -v site-packages | head -1 || true)"
+    [ -n "$hdr" ] && [ -n "$lcc" ]
+  }
+  for c in "$CUDA_HOME" "$HMO_CUDA_ENV" /usr/local/cuda /usr/local/cuda-12.0; do
+    if _cuda_complete "$c"; then root="$c"; break; fi
   done
 
-  # If none, try to provision a full toolkit into conda (matches the conda nvcc already
-  # present). One-time, ~2GB. Set SKIP_CUDA_INSTALL=1 to handle it yourself.
-  if [ -z "$root" ] && [ "${SKIP_CUDA_INSTALL:-0}" != "1" ] && command -v conda >/dev/null 2>&1; then
-    echo "No complete CUDA toolkit found — installing cuda-toolkit=12.0 into conda (one-time, ~2GB)..."
-    conda install -y -c nvidia cuda-toolkit=12.0 || echo "WARN: 'conda install cuda-toolkit' failed"
-    for c in "$CONDA_PREFIX" /opt/conda; do
-      [ -n "$c" ] && [ -x "$c/bin/nvcc" ] || continue
-      hdr="$(find "$c" -name cuda_runtime.h 2>/dev/null | grep -v site-packages | head -1 || true)"
-      lcc="$(find "$c" -name 'libcudart.so' 2>/dev/null | grep -v site-packages | head -1 || true)"
-      if [ -n "$hdr" ] && [ -n "$lcc" ]; then root="$c"; break; fi
-    done
+  # None complete -> create the dedicated env (one-time, ~2GB; base env untouched).
+  # Pinned to a single version <= driver max (default 12.0; override CUDA_TOOLKIT_VERSION).
+  if [ -z "$root" ] && [ "${SKIP_CUDA_INSTALL:-0}" != "1" ] && command -v conda >/dev/null 2>&1 && [ -n "$HMO_CUDA_ENV" ]; then
+    local cver="${CUDA_TOOLKIT_VERSION:-12.0}"
+    echo "Provisioning dedicated CUDA $cver toolkit env at $HMO_CUDA_ENV (one-time, ~2GB; base env untouched)..."
+    conda create -y -n "$HMO_CUDA_ENV_NAME" -c nvidia "cuda-toolkit=$cver" || echo "WARN: conda create failed"
+    _cuda_complete "$HMO_CUDA_ENV" && root="$HMO_CUDA_ENV"
   fi
 
   if [ -z "$root" ]; then
     echo "ERROR: no complete CUDA toolkit (nvcc + cuda_runtime.h + libcudart.so)."
-    echo "       This box has only partial CUDA (runtime libs, no headers). Install a full"
-    echo "       CUDA 12.x toolkit, e.g.:  conda install -y -c nvidia cuda-toolkit=12.0"
+    echo "       Tried: \$CUDA_HOME, $HMO_CUDA_ENV, /usr/local/cuda*."
+    echo "       Create one with:  conda create -y -n $HMO_CUDA_ENV_NAME -c nvidia cuda-toolkit=${CUDA_TOOLKIT_VERSION:-12.0}"
     echo "       (or set CUDA_HOME to a complete toolkit) and re-run setup."
     return 1
   fi
