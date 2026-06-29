@@ -185,15 +185,20 @@ phase_build_omni() {
   fi
   [ -z "$cuda_home" ] && [ -d /usr/local/cuda ] && cuda_home=/usr/local/cuda
   libcudart="$(find "$cuda_home" /usr/local/cuda* /usr/lib /usr/lib64 -name 'libcudart.so*' 2>/dev/null | head -1)"
-  if command -v nvcc >/dev/null 2>&1 && [ -n "$libcudart" ]; then
-    echo "CUDA toolkit found (root=$cuda_home, cudart=$libcudart) — building with GGML_CUDA"
-    cuda_flags="-DGGML_CUDA=ON -DCUDAToolkit_ROOT=$cuda_home -DCMAKE_CUDA_COMPILER=$cuda_home/bin/nvcc"
-    # cudart's dir on the linker path for the build + at runtime.
-    export LD_LIBRARY_PATH="$(dirname "$libcudart"):${LD_LIBRARY_PATH:-}"
-  else
-    echo "WARN: CUDA toolkit (libcudart) not found — building CPU-only llama-server."
-    echo "      MiniCPM-o on CPU is slow; install the CUDA toolkit and rebuild for GPU."
+  if ! command -v nvcc >/dev/null 2>&1; then
+    echo "ERROR: nvcc not found — MiniCPM-o GGUF needs a CUDA build (no CPU fallback)."
+    echo "       Install the CUDA toolkit (must match the driver) and re-run setup."
+    return 1
   fi
+  if [ -z "$libcudart" ]; then
+    echo "ERROR: nvcc present but libcudart.so not found — incomplete CUDA toolkit."
+    echo "       Looked under: $cuda_home /usr/local/cuda* /usr/lib /usr/lib64"
+    echo "       Set CUDA_HOME to the toolkit root (the dir with bin/nvcc + lib64/libcudart.so) and re-run."
+    return 1
+  fi
+  echo "CUDA toolkit found (root=$cuda_home, cudart=$libcudart) — building with GGML_CUDA"
+  cuda_flags="-DGGML_CUDA=ON -DCUDAToolkit_ROOT=$cuda_home -DCMAKE_CUDA_COMPILER=$cuda_home/bin/nvcc"
+  export LD_LIBRARY_PATH="$(dirname "$libcudart"):${LD_LIBRARY_PATH:-}"  # build + runtime
   ( cd "$LLAMA_OMNI_DIR" \
       && cmake -B build -DCMAKE_BUILD_TYPE=Release $cuda_flags \
       && cmake --build build --target llama-server -j"$(nproc)" )
