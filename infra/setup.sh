@@ -149,8 +149,14 @@ phase_workspace() {
 }
 
 phase_clone() {
-  # Hear-Me-Out (with the seed-vc submodule).
-  [ -d "$REPO_DIR" ] && echo "Hear-Me-Out exists" || git clone --recursive "$REPO_URL" "$REPO_DIR"
+  # Hear-Me-Out (with the seed-vc submodule). If it already exists, pull so a stale
+  # checkout doesn't keep running an old setup.sh / service code.
+  if [ -d "$REPO_DIR/.git" ]; then
+    echo "Hear-Me-Out exists — pulling latest"
+    git -C "$REPO_DIR" pull --ff-only 2>/dev/null || echo "WARN: git pull failed (local changes?) — using existing checkout"
+  else
+    git clone --recursive "$REPO_URL" "$REPO_DIR"
+  fi
   git -C "$REPO_DIR" submodule update --init --recursive 2>/dev/null || true
   # MeanVC — cloned only for its speaker_verification source (copied in phase_runtime).
   [ -d "$MEANVC_DIR" ] && echo "MeanVC exists" || git clone "$MEANVC_URL" "$MEANVC_DIR"
