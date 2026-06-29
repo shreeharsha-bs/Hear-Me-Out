@@ -182,48 +182,46 @@ phase_build_omni() {
     echo "llama-server already built"; return 0
   fi
 
-  # Need a *real* CUDA toolkit (bin/nvcc + libcudart), not just a compiler. Note:
-  # conda ships its own nvcc and sets CUDA_PATH=/opt/conda (NOT a toolkit), which has
-  # no libcudart — so we ignore CUDA_PATH and prefer /usr/local/cuda. PyTorch's pip
-  # cudart under site-packages is also not a usable toolkit, so we only search real roots.
-  local cuda_home="" libcudart="" nvcc_bin c lc
-  for c in "$CUDA_HOME" /usr/local/cuda /usr/local/cuda-12.0 /usr/local/cuda-12; do
-    [ -n "$c" ] && [ -d "$c" ] || continue
-    lc="$(find "$c/" -name 'libcudart.so*' 2>/dev/null | head -1 || true)"
-    if [ -n "$lc" ]; then cuda_home="$c"; libcudart="$lc"; break; fi
+  # Compiling CUDA needs a COMPLETE toolkit in one tree: nvcc + cuda_runtime.h (headers)
+  # + libcudart.so (the unversioned dev symlink). This box's system CUDA has only
+  # versioned runtime .so's (no headers, no dev symlink) and conda has only nvcc — so we
+  # need a real toolkit. Search candidate roots for all three together; pip's nvidia
+  # wheels under site-packages are not a usable toolkit, so they're excluded.
+  local root="" c hdr lcc
+  for c in "$CUDA_HOME" "$CONDA_PREFIX" /opt/conda /usr/local/cuda /usr/local/cuda-12.0 /usr/local/cuda-12; do
+    [ -n "$c" ] && [ -x "$c/bin/nvcc" ] || continue
+    hdr="$(find "$c" -name cuda_runtime.h 2>/dev/null | grep -v site-packages | head -1 || true)"
+    lcc="$(find "$c" -name 'libcudart.so' 2>/dev/null | grep -v site-packages | head -1 || true)"
+    if [ -n "$hdr" ] && [ -n "$lcc" ]; then root="$c"; break; fi
   done
-  if [ -z "$cuda_home" ]; then
-    echo "ERROR: no complete CUDA toolkit (libcudart.so) under /usr/local/cuda* or \$CUDA_HOME."
-    echo "       MiniCPM-o GGUF needs a CUDA build (no CPU fallback). Set CUDA_HOME to the"
-    echo "       toolkit root (dir containing bin/nvcc + .../libcudart.so) and re-run setup."
+
+  # If none, try to provision a full toolkit into conda (matches the conda nvcc already
+  # present). One-time, ~2GB. Set SKIP_CUDA_INSTALL=1 to handle it yourself.
+  if [ -z "$root" ] && [ "${SKIP_CUDA_INSTALL:-0}" != "1" ] && command -v conda >/dev/null 2>&1; then
+    echo "No complete CUDA toolkit found — installing cuda-toolkit=12.0 into conda (one-time, ~2GB)..."
+    conda install -y -c nvidia cuda-toolkit=12.0 || echo "WARN: 'conda install cuda-toolkit' failed"
+    for c in "$CONDA_PREFIX" /opt/conda; do
+      [ -n "$c" ] && [ -x "$c/bin/nvcc" ] || continue
+      hdr="$(find "$c" -name cuda_runtime.h 2>/dev/null | grep -v site-packages | head -1 || true)"
+      lcc="$(find "$c" -name 'libcudart.so' 2>/dev/null | grep -v site-packages | head -1 || true)"
+      if [ -n "$hdr" ] && [ -n "$lcc" ]; then root="$c"; break; fi
+    done
+  fi
+
+  if [ -z "$root" ]; then
+    echo "ERROR: no complete CUDA toolkit (nvcc + cuda_runtime.h + libcudart.so)."
+    echo "       This box has only partial CUDA (runtime libs, no headers). Install a full"
+    echo "       CUDA 12.x toolkit, e.g.:  conda install -y -c nvidia cuda-toolkit=12.0"
+    echo "       (or set CUDA_HOME to a complete toolkit) and re-run setup."
     return 1
   fi
-  nvcc_bin="$cuda_home/bin/nvcc"; [ -x "$nvcc_bin" ] || nvcc_bin="$(command -v nvcc)"
 
-  # CMake's find_package(CUDAToolkit) derives the toolkit root from the *compiler*
-  # directory when the CUDA language is enabled. Here nvcc is conda's (/opt/conda,
-  # no cudart) while the libs live under /usr/local/cuda — so CMake looks in the wrong
-  # place and "CUDA_CUDART" goes missing. Build a shim toolkit that puts conda's nvcc
-  # next to the real toolkit's lib64/include so the derived root is complete. No root needed.
-  if [ ! -x "$cuda_home/bin/nvcc" ]; then
-    local shim="$WORKSPACE/.cuda-shim"
-    rm -rf "$shim"; mkdir -p "$shim/bin"
-    ln -s "$nvcc_bin" "$shim/bin/nvcc"
-    local sub
-    for sub in lib64 lib include targets nvvm; do
-      [ -e "$cuda_home/$sub" ] && ln -s "$cuda_home/$sub" "$shim/$sub"
-    done
-    cuda_home="$shim"; nvcc_bin="$shim/bin/nvcc"
-    echo "Built CUDA shim toolkit at $shim (conda nvcc + system libs)"
-  fi
-
-  echo "CUDA toolkit: root=$cuda_home nvcc=$nvcc_bin cudart=$libcudart — building with GGML_CUDA"
-  export LD_LIBRARY_PATH="$(dirname "$libcudart"):${LD_LIBRARY_PATH:-}"  # build + runtime
-  # Wipe any poisoned cache from a previous failed configure before reconfiguring.
-  rm -rf "$LLAMA_OMNI_DIR/build"
+  echo "CUDA toolkit: root=$root nvcc=$root/bin/nvcc cudart=$lcc — building with GGML_CUDA"
+  export LD_LIBRARY_PATH="$(dirname "$lcc"):${LD_LIBRARY_PATH:-}"  # build + runtime
+  rm -rf "$LLAMA_OMNI_DIR/build"   # wipe any poisoned cache from a failed configure
   ( cd "$LLAMA_OMNI_DIR" \
       && cmake -B build -DCMAKE_BUILD_TYPE=Release -DGGML_CUDA=ON \
-           -DCUDAToolkit_ROOT="$cuda_home" -DCMAKE_CUDA_COMPILER="$nvcc_bin" \
+           -DCUDAToolkit_ROOT="$root" -DCMAKE_CUDA_COMPILER="$root/bin/nvcc" \
       && cmake --build build --target llama-server -j"$(nproc)" )
 }
 
