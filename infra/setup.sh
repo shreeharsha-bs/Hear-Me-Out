@@ -222,12 +222,22 @@ phase_build_omni() {
     return 1
   fi
 
-  echo "CUDA toolkit: root=$root nvcc=$root/bin/nvcc cudart=$lcc — building with GGML_CUDA"
+  # Force the GPU's compute capability so kernels get native SASS. "device kernel image
+  # is invalid" at runtime means the build lacked SASS for this card. Auto-detect from
+  # nvidia-smi (RTX 3090 -> 8.6 -> 86); default 86. Override with CUDA_ARCH.
+  local arch="${CUDA_ARCH:-}"
+  if [ -z "$arch" ] && command -v nvidia-smi >/dev/null 2>&1; then
+    arch="$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader 2>/dev/null | head -1 | tr -d '. ')"
+  fi
+  [ -n "$arch" ] || arch="86"
+
+  echo "CUDA toolkit: root=$root nvcc=$root/bin/nvcc cudart=$lcc arch=$arch — building with GGML_CUDA"
   export LD_LIBRARY_PATH="$(dirname "$lcc"):${LD_LIBRARY_PATH:-}"  # build + runtime
   rm -rf "$LLAMA_OMNI_DIR/build"   # wipe any poisoned cache from a failed configure
   ( cd "$LLAMA_OMNI_DIR" \
       && cmake -B build -DCMAKE_BUILD_TYPE=Release -DGGML_CUDA=ON \
            -DCUDAToolkit_ROOT="$root" -DCMAKE_CUDA_COMPILER="$root/bin/nvcc" \
+           -DCMAKE_CUDA_ARCHITECTURES="$arch" \
       && cmake --build build --target llama-server -j"$(nproc)" )
 }
 
