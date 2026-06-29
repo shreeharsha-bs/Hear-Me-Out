@@ -189,7 +189,7 @@ phase_build_omni() {
   local cuda_home="" libcudart="" nvcc_bin c lc
   for c in "$CUDA_HOME" /usr/local/cuda /usr/local/cuda-12.0 /usr/local/cuda-12; do
     [ -n "$c" ] && [ -d "$c" ] || continue
-    lc="$(find "$c/" -name 'libcudart.so*' 2>/dev/null | head -1)"
+    lc="$(find "$c/" -name 'libcudart.so*' 2>/dev/null | head -1 || true)"
     if [ -n "$lc" ]; then cuda_home="$c"; libcudart="$lc"; break; fi
   done
   if [ -z "$cuda_home" ]; then
@@ -341,8 +341,8 @@ print_header() {
   # Show the cloned Hear-Me-Out commit (this is the code run_all.sh + the phases use).
   # setup.sh is usually curl'd to a standalone file outside the repo, so we read the
   # repo at $REPO_DIR, not the script's own location. Empty until phase_clone runs.
-  local _commit
-  _commit="$(git -C "$REPO_DIR" log -1 --pretty='%h %s (%cr)' 2>/dev/null)"
+  # NOTE: must be `local VAR=$(...) || true` — a bare `VAR=$(failing)` aborts under set -e.
+  local _commit="$(git -C "$REPO_DIR" log -1 --pretty='%h %s (%cr)' 2>/dev/null || true)"
   echo -e "  ${DIM}commit${NC}     ${_commit:-<repo not cloned yet — see Clone step>}"
   if command -v nvidia-smi >/dev/null 2>&1; then
     echo -e "  ${DIM}gpu${NC}        $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -1)"
