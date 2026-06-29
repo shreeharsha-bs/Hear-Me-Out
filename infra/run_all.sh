@@ -98,10 +98,17 @@ if [ "$SPEECH_LM_ENGINE" = "minicpm_o" ]; then
     export MINICPM_O_CPP_PORT="${MINICPM_O_CPP_PORT:-19080}"
     export MINICPM_REF_AUDIO="${MINICPM_REF_AUDIO:-$HEARMEOUT_DIR/recordings/Target_2.wav}"
     export MINICPM_O_OUTPUT_DIR="${MINICPM_O_OUTPUT_DIR:-$SERVICES/minicpm_o/_omni_out}"
-    # llama-server (CUDA) needs libcudart.so.12 at runtime — add the system toolkit libs.
-    for _d in /usr/local/cuda/lib64 /usr/local/cuda/targets/x86_64-linux/lib; do
-        [ -d "$_d" ] && export LD_LIBRARY_PATH="$_d:${LD_LIBRARY_PATH:-}"
-    done
+    # llama-server (CUDA build) needs its cudart at runtime — and it MUST match the toolkit
+    # it was built with (the runfile toolkit at $WORKSPACE/cuda-*, which is <= the driver).
+    # Build a lib path, applied ONLY to the MiniCPM-o launch (not exported globally), so it
+    # never shadows app-api / the VC engine's torch-cu121 bundled CUDA. Toolkit libs go
+    # FIRST; $CUDA_HOME (if set) wins over everything.
+    MINICPM_O_LD=""
+    _add_ld() { [ -n "$1" ] && [ -d "$1" ] && MINICPM_O_LD="${MINICPM_O_LD:+$MINICPM_O_LD:}$1"; }
+    _add_ld "${CUDA_HOME:+$CUDA_HOME/lib64}"
+    for _d in "$WORKSPACE"/cuda-*/lib64; do _add_ld "$_d"; done   # runfile toolkit(s)
+    _add_ld /usr/local/cuda/lib64
+    _add_ld /usr/local/cuda/targets/x86_64-linux/lib
     pkill -f "llama-server" 2>/dev/null || true   # clear a stale C++ engine
 fi
 export VC_CHECKPOINT_PATH="$WORKSPACE/models/seed-vc/DiT_uvit_tat_xlsr_ema.pth"
@@ -114,7 +121,9 @@ echo -e "${DIM}─────────────────────�
 # --- Speech LM :8000 ---
 if [ "$SPEECH_LM_ENGINE" = "minicpm_o" ]; then
     echo -e "  ${CYAN}▶${NC} MiniCPM-o     :8000  ${DIM}(GPU)${NC}"
-    ( cd "$SERVICES/minicpm_o" && exec uv run python server.py \
+    # LD_LIBRARY_PATH scoped to THIS process only (not app-api / VC engine).
+    ( cd "$SERVICES/minicpm_o" && LD_LIBRARY_PATH="${MINICPM_O_LD}${LD_LIBRARY_PATH:-}" \
+        exec uv run python server.py \
         --host 0.0.0.0 --port 8000 --device cuda --ssl "$SSL_DIR" ) &
     PID1=$!; LM_LABEL="MiniCPM-o"
 else

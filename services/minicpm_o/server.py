@@ -109,6 +109,7 @@ class LlamaOmni:
         self.cnt = 0
         self.sent_wavs: set[str] = set()
         self.cur_prompt: str | None = None
+        self._cpp_log_path = os.path.join(OUTPUT_DIR, "llama-server.log")
         os.makedirs(TEMP_DIR, exist_ok=True)
         os.makedirs(os.path.join(OUTPUT_DIR, "tts_wav"), exist_ok=True)
 
@@ -133,7 +134,13 @@ class LlamaOmni:
             bufsize=1, encoding="utf-8", errors="replace", start_new_session=True,
         )
         threading.Thread(target=self._log_reader, daemon=True).start()
+        # Wait for /health, but fail fast if the process dies (don't hang 300s blind).
         for i in range(300):
+            if self.proc.poll() is not None:
+                raise RuntimeError(
+                    f"llama-omni-server exited (code {self.proc.returncode}) during startup — "
+                    f"see {self._cpp_log_path}"
+                )
             try:
                 if requests.get(f"{self.url}/health", timeout=2, proxies=_NO_PROXY).status_code == 200:
                     logger.info("llama-omni-server ready after %ds", i + 1)
@@ -141,12 +148,20 @@ class LlamaOmni:
             except Exception:
                 pass
             time.sleep(1)
-        raise RuntimeError("llama-omni-server startup timeout (300s)")
+        raise RuntimeError(f"llama-omni-server startup timeout (300s) — see {self._cpp_log_path}")
 
     def _log_reader(self):
+        # Tee the C++ engine's output to a file, and surface error-ish lines in our log.
         try:
-            for line in self.proc.stdout:
-                logger.debug("[CPP] %s", line.rstrip())
+            with open(self._cpp_log_path, "w") as f:
+                for line in self.proc.stdout:
+                    f.write(line)
+                    f.flush()
+                    s = line.rstrip()
+                    if any(k in s.lower() for k in ("error", "fail", "cannot", "abort", "assert", "cuda")):
+                        logger.warning("[llama-server] %s", s)
+                    else:
+                        logger.debug("[llama-server] %s", s)
         except Exception:
             pass
 

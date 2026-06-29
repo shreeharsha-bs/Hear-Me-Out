@@ -113,6 +113,11 @@ XVC_DIR="$WORKSPACE/X-VC"
 LLAMA_OMNI_DIR="$WORKSPACE/llama.cpp-omni"
 MO_GGUF_DIR="$MODELS_DIR/minicpm-o-gguf"
 SERVICES="$REPO_DIR/services"
+# Dedicated conda env holding the CUDA toolkit used to BUILD llama.cpp-omni (build-time
+# only; keeps the base env + torch services untouched). Auto-discovered, no CUDA_HOME needed.
+HMO_CUDA_ENV_NAME="${HMO_CUDA_ENV_NAME:-hmo-cuda}"
+HMO_CUDA_ENV=""
+command -v conda >/dev/null 2>&1 && HMO_CUDA_ENV="$(conda info --base 2>/dev/null)/envs/$HMO_CUDA_ENV_NAME"
 
 echo; hr
 echo -e "  ${BOLD}Workspace${NC}    : $WORKSPACE"
@@ -182,48 +187,50 @@ phase_build_omni() {
     echo "llama-server already built"; return 0
   fi
 
-  # Need a *real* CUDA toolkit (bin/nvcc + libcudart), not just a compiler. Note:
-  # conda ships its own nvcc and sets CUDA_PATH=/opt/conda (NOT a toolkit), which has
-  # no libcudart — so we ignore CUDA_PATH and prefer /usr/local/cuda. PyTorch's pip
-  # cudart under site-packages is also not a usable toolkit, so we only search real roots.
-  local cuda_home="" libcudart="" nvcc_bin c lc
-  for c in "$CUDA_HOME" /usr/local/cuda /usr/local/cuda-12.0 /usr/local/cuda-12; do
-    [ -n "$c" ] && [ -d "$c" ] || continue
-    lc="$(find "$c/" -name 'libcudart.so*' 2>/dev/null | head -1)"
-    if [ -n "$lc" ]; then cuda_home="$c"; libcudart="$lc"; break; fi
-  done
-  if [ -z "$cuda_home" ]; then
-    echo "ERROR: no complete CUDA toolkit (libcudart.so) under /usr/local/cuda* or \$CUDA_HOME."
-    echo "       MiniCPM-o GGUF needs a CUDA build (no CPU fallback). Set CUDA_HOME to the"
-    echo "       toolkit root (dir containing bin/nvcc + .../libcudart.so) and re-run setup."
+  # Compiling CUDA needs a COMPLETE toolkit (nvcc + headers + libcudart.so) whose version
+  # is <= the driver's CUDA version — else kernels fail at runtime with "device kernel image
+  # is invalid". conda ignores the version pin (gives 12.9), and the pip nvcc wheel ships no
+  # nvcc front-end — so we install NVIDIA's official CUDA runfile toolkit (rootless, to a
+  # user dir, exact version). Default 12.2.2 (driver-matched here); override CUDA_RUNFILE_URL.
+  local cver="${CUDA_TOOLKIT_VERSION:-12.2}"
+  local CUDA_TK="$WORKSPACE/cuda-$cver"
+  local runfile_url="${CUDA_RUNFILE_URL:-https://developer.download.nvidia.com/compute/cuda/12.2.2/local_installers/cuda_12.2.2_535.104.05_linux.run}"
+
+  if [ -x "$CUDA_TK/bin/nvcc" ]; then
+    echo "CUDA $cver toolkit present at $CUDA_TK"
+  elif [ -n "$CUDA_HOME" ] && [ -x "$CUDA_HOME/bin/nvcc" ]; then
+    CUDA_TK="$CUDA_HOME"; echo "Using CUDA toolkit from CUDA_HOME=$CUDA_HOME"
+  else
+    echo "Installing CUDA $cver toolkit (runfile, rootless -> $CUDA_TK; one-time, ~4GB)..."
+    mkdir -p "$WORKSPACE/tmp"
+    local rf="$WORKSPACE/cuda_runfile.run"
+    wget -q "$runfile_url" -O "$rf" || { echo "ERROR: CUDA runfile download failed ($runfile_url)"; return 1; }
+    sh "$rf" --silent --toolkit --toolkitpath="$CUDA_TK" \
+        --tmpdir="$WORKSPACE/tmp" --override --no-man-page || true
+    rm -f "$rf"
+  fi
+  if [ ! -x "$CUDA_TK/bin/nvcc" ]; then
+    echo "ERROR: CUDA toolkit not available at $CUDA_TK/bin/nvcc."
+    echo "       Set CUDA_RUNFILE_URL to a CUDA <= driver runfile, or CUDA_HOME to a toolkit, and re-run."
     return 1
   fi
-  nvcc_bin="$cuda_home/bin/nvcc"; [ -x "$nvcc_bin" ] || nvcc_bin="$(command -v nvcc)"
+  local root="$CUDA_TK"
+  local lcc; lcc="$(find "$root" -name 'libcudart.so*' 2>/dev/null | head -1 || true)"
 
-  # CMake's find_package(CUDAToolkit) derives the toolkit root from the *compiler*
-  # directory when the CUDA language is enabled. Here nvcc is conda's (/opt/conda,
-  # no cudart) while the libs live under /usr/local/cuda — so CMake looks in the wrong
-  # place and "CUDA_CUDART" goes missing. Build a shim toolkit that puts conda's nvcc
-  # next to the real toolkit's lib64/include so the derived root is complete. No root needed.
-  if [ ! -x "$cuda_home/bin/nvcc" ]; then
-    local shim="$WORKSPACE/.cuda-shim"
-    rm -rf "$shim"; mkdir -p "$shim/bin"
-    ln -s "$nvcc_bin" "$shim/bin/nvcc"
-    local sub
-    for sub in lib64 lib include targets nvvm; do
-      [ -e "$cuda_home/$sub" ] && ln -s "$cuda_home/$sub" "$shim/$sub"
-    done
-    cuda_home="$shim"; nvcc_bin="$shim/bin/nvcc"
-    echo "Built CUDA shim toolkit at $shim (conda nvcc + system libs)"
+  # Force the GPU's compute capability so kernels get native SASS (RTX 3090 -> 86).
+  local arch="${CUDA_ARCH:-}"
+  if [ -z "$arch" ] && command -v nvidia-smi >/dev/null 2>&1; then
+    arch="$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader 2>/dev/null | head -1 | tr -d '. ')"
   fi
+  [ -n "$arch" ] || arch="86"
 
-  echo "CUDA toolkit: root=$cuda_home nvcc=$nvcc_bin cudart=$libcudart — building with GGML_CUDA"
-  export LD_LIBRARY_PATH="$(dirname "$libcudart"):${LD_LIBRARY_PATH:-}"  # build + runtime
-  # Wipe any poisoned cache from a previous failed configure before reconfiguring.
-  rm -rf "$LLAMA_OMNI_DIR/build"
+  echo "CUDA toolkit: root=$root nvcc=$root/bin/nvcc arch=$arch — building with GGML_CUDA"
+  export LD_LIBRARY_PATH="$root/lib64:${LD_LIBRARY_PATH:-}"  # build + runtime
+  rm -rf "$LLAMA_OMNI_DIR/build"   # wipe any poisoned cache from a failed configure
   ( cd "$LLAMA_OMNI_DIR" \
       && cmake -B build -DCMAKE_BUILD_TYPE=Release -DGGML_CUDA=ON \
-           -DCUDAToolkit_ROOT="$cuda_home" -DCMAKE_CUDA_COMPILER="$nvcc_bin" \
+           -DCUDAToolkit_ROOT="$root" -DCMAKE_CUDA_COMPILER="$root/bin/nvcc" \
+           -DCMAKE_CUDA_ARCHITECTURES="$arch" \
       && cmake --build build --target llama-server -j"$(nproc)" )
 }
 
@@ -341,8 +348,8 @@ print_header() {
   # Show the cloned Hear-Me-Out commit (this is the code run_all.sh + the phases use).
   # setup.sh is usually curl'd to a standalone file outside the repo, so we read the
   # repo at $REPO_DIR, not the script's own location. Empty until phase_clone runs.
-  local _commit
-  _commit="$(git -C "$REPO_DIR" log -1 --pretty='%h %s (%cr)' 2>/dev/null)"
+  # NOTE: must be `local VAR=$(...) || true` — a bare `VAR=$(failing)` aborts under set -e.
+  local _commit="$(git -C "$REPO_DIR" log -1 --pretty='%h %s (%cr)' 2>/dev/null || true)"
   echo -e "  ${DIM}commit${NC}     ${_commit:-<repo not cloned yet — see Clone step>}"
   if command -v nvidia-smi >/dev/null 2>&1; then
     echo -e "  ${DIM}gpu${NC}        $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -1)"
