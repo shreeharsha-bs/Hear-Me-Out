@@ -158,6 +158,7 @@ phase_clone() {
     git clone --recursive "$REPO_URL" "$REPO_DIR"
   fi
   git -C "$REPO_DIR" submodule update --init --recursive 2>/dev/null || true
+  echo "Hear-Me-Out at $(git -C "$REPO_DIR" log -1 --pretty='%h %s' 2>/dev/null)"
   # MeanVC — cloned only for its speaker_verification source (copied in phase_runtime).
   [ -d "$MEANVC_DIR" ] && echo "MeanVC exists" || git clone "$MEANVC_URL" "$MEANVC_DIR"
   # X-VC — cloned + run from source by services/xvc/server.py (added to sys.path).
@@ -337,11 +338,12 @@ print_header() {
   echo -e "${BOLD}│        Hear-Me-Out — installing backend      │${NC}"
   echo -e "${BOLD}╰──────────────────────────────────────────────╯${NC}"
   echo -e "  ${DIM}workspace${NC}  $WORKSPACE"
-  # Show the exact code version this setup.sh came from, for debugging across runs.
-  local _src_repo _commit
-  _src_repo="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" 2>/dev/null && pwd)"
-  _commit="$(git -C "$_src_repo" log -1 --pretty='%h %s (%cr)' 2>/dev/null)"
-  [ -n "$_commit" ] && echo -e "  ${DIM}commit${NC}     $_commit"
+  # Show the cloned Hear-Me-Out commit (this is the code run_all.sh + the phases use).
+  # setup.sh is usually curl'd to a standalone file outside the repo, so we read the
+  # repo at $REPO_DIR, not the script's own location. Empty until phase_clone runs.
+  local _commit
+  _commit="$(git -C "$REPO_DIR" log -1 --pretty='%h %s (%cr)' 2>/dev/null)"
+  echo -e "  ${DIM}commit${NC}     ${_commit:-<repo not cloned yet — see Clone step>}"
   if command -v nvidia-smi >/dev/null 2>&1; then
     echo -e "  ${DIM}gpu${NC}        $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -1)"
   fi
