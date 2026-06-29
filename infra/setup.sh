@@ -170,14 +170,33 @@ phase_clone() {
 }
 
 phase_build_omni() {
-  # Build only the HTTP server target. CMake auto-enables CUDA when nvcc is present.
+  # Build only the HTTP server target.
   if [ -x "$LLAMA_OMNI_DIR/build/bin/llama-server" ]; then
     echo "llama-server already built"; return 0
   fi
-  local cuda_flag=""
-  command -v nvcc >/dev/null 2>&1 && cuda_flag="-DGGML_CUDA=ON"
+
+  # Need a *real* CUDA toolkit (bin/nvcc + libcudart), not just a compiler. Note:
+  # conda ships its own nvcc and sets CUDA_PATH=/opt/conda (NOT a toolkit), which has
+  # no libcudart — so we ignore CUDA_PATH and prefer /usr/local/cuda. PyTorch's pip
+  # cudart under site-packages is also not a usable toolkit, so we only search real roots.
+  local cuda_home="" libcudart="" nvcc_bin c lc
+  for c in "$CUDA_HOME" /usr/local/cuda /usr/local/cuda-12.0 /usr/local/cuda-12; do
+    [ -n "$c" ] && [ -d "$c" ] || continue
+    lc="$(find "$c/" -name 'libcudart.so*' 2>/dev/null | head -1)"
+    if [ -n "$lc" ]; then cuda_home="$c"; libcudart="$lc"; break; fi
+  done
+  if [ -z "$cuda_home" ]; then
+    echo "ERROR: no complete CUDA toolkit (libcudart.so) under /usr/local/cuda* or \$CUDA_HOME."
+    echo "       MiniCPM-o GGUF needs a CUDA build (no CPU fallback). Set CUDA_HOME to the"
+    echo "       toolkit root (dir containing bin/nvcc + .../libcudart.so) and re-run setup."
+    return 1
+  fi
+  nvcc_bin="$cuda_home/bin/nvcc"; [ -x "$nvcc_bin" ] || nvcc_bin="$(command -v nvcc)"
+  echo "CUDA toolkit: root=$cuda_home nvcc=$nvcc_bin cudart=$libcudart — building with GGML_CUDA"
+  export LD_LIBRARY_PATH="$(dirname "$libcudart"):${LD_LIBRARY_PATH:-}"  # build + runtime
   ( cd "$LLAMA_OMNI_DIR" \
-      && cmake -B build -DCMAKE_BUILD_TYPE=Release $cuda_flag \
+      && cmake -B build -DCMAKE_BUILD_TYPE=Release -DGGML_CUDA=ON \
+           -DCUDAToolkit_ROOT="$cuda_home" -DCMAKE_CUDA_COMPILER="$nvcc_bin" \
       && cmake --build build --target llama-server -j"$(nproc)" )
 }
 

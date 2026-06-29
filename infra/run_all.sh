@@ -98,6 +98,10 @@ if [ "$SPEECH_LM_ENGINE" = "minicpm_o" ]; then
     export MINICPM_O_CPP_PORT="${MINICPM_O_CPP_PORT:-19080}"
     export MINICPM_REF_AUDIO="${MINICPM_REF_AUDIO:-$HEARMEOUT_DIR/recordings/Target_2.wav}"
     export MINICPM_O_OUTPUT_DIR="${MINICPM_O_OUTPUT_DIR:-$SERVICES/minicpm_o/_omni_out}"
+    # llama-server (CUDA) needs libcudart.so.12 at runtime — add the system toolkit libs.
+    for _d in /usr/local/cuda/lib64 /usr/local/cuda/targets/x86_64-linux/lib; do
+        [ -d "$_d" ] && export LD_LIBRARY_PATH="$_d:${LD_LIBRARY_PATH:-}"
+    done
     pkill -f "llama-server" 2>/dev/null || true   # clear a stale C++ engine
 fi
 export VC_CHECKPOINT_PATH="$WORKSPACE/models/seed-vc/DiT_uvit_tat_xlsr_ema.pth"
