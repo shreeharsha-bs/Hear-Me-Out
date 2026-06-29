@@ -266,29 +266,45 @@ class LlamaOmni:
         return "".join(texts), is_listen
 
     def collect_new_audio(self) -> np.ndarray | None:
-        """Scan <output_dir>/tts_wav for new wav_N.wav (24k float32); concat new ones."""
-        d = os.path.join(OUTPUT_DIR, "tts_wav")
-        if not os.path.isdir(d):
-            return None
-        wavs = sorted(
-            (f for f in os.listdir(d) if f.startswith("wav_") and f.endswith(".wav")),
-            key=lambda f: int(re.search(r"wav_(\d+)", f).group(1)) if re.search(r"wav_(\d+)", f) else 0,
-        )
-        new = [f for f in wavs if f not in self.sent_wavs]
-        if not new:
-            return None
+        """Scan for new wav_N.wav (24k float32) and concat. The C++ server writes either to
+        <output_dir>/tts_wav/ (duplex) or per-round <output_dir>/round_NNN/tts_wav/, so we
+        scan both. Sent files are tracked by full path."""
+        dirs = []
+        direct = os.path.join(OUTPUT_DIR, "tts_wav")
+        if os.path.isdir(direct):
+            dirs.append(direct)
+        try:
+            for rd in sorted(os.listdir(OUTPUT_DIR)):
+                p = os.path.join(OUTPUT_DIR, rd, "tts_wav")
+                if rd.startswith("round_") and os.path.isdir(p):
+                    dirs.append(p)
+        except FileNotFoundError:
+            pass
+
+        def _idx(name):
+            m = re.search(r"wav_(\d+)", name)
+            return int(m.group(1)) if m else 0
+
         chunks = []
-        for f in new:
-            try:
-                data, _sr = sf.read(os.path.join(d, f), dtype="float32")
-                if len(data):
-                    if data.ndim > 1:
-                        data = data.mean(axis=1)
-                    chunks.append(data)
-                self.sent_wavs.add(f)
-            except Exception:
-                pass
-        return np.concatenate(chunks) if chunks else None
+        for d in dirs:
+            for f in sorted((x for x in os.listdir(d) if x.startswith("wav_") and x.endswith(".wav")), key=_idx):
+                key = os.path.join(d, f)
+                if key in self.sent_wavs:
+                    continue
+                try:
+                    data, _sr = sf.read(key, dtype="float32")
+                    if len(data):
+                        if data.ndim > 1:
+                            data = data.mean(axis=1)
+                        chunks.append(data)
+                    self.sent_wavs.add(key)
+                except Exception as e:
+                    logger.warning("[audio] read %s failed: %s", key, e)
+        if chunks:
+            logger.info("[audio] %d new wav(s), %d samples (dirs=%s)",
+                        len(chunks), sum(len(c) for c in chunks), [os.path.relpath(d, OUTPUT_DIR) for d in dirs])
+            return np.concatenate(chunks)
+        return None
 
     def break_(self, reason: str):
         try:
@@ -314,9 +330,15 @@ async def handle_chat(request: web.Request) -> web.WebSocketResponse:
     opus_writer = sphn.OpusStreamWriter(OPUS_SR)
     loop = asyncio.get_event_loop()
 
-    in_q: queue.Queue = queue.Queue()
-    out_q: asyncio.Queue = asyncio.Queue()
+    # Official worker.py pattern: bounded chunk queue (drop oldest for backpressure), a
+    # per-chunk prefill+decode worker that emits TEXT only, and a SEPARATE 0.1s WAV poller
+    # that streams audio — because the C++ Token2Wav writes wavs asynchronously, so audio
+    # cannot be collected synchronously right after decode().
+    in_q: queue.Queue = queue.Queue(maxsize=2)
+    text_q: asyncio.Queue = asyncio.Queue()
     sentinel = object()
+    worker_stop = threading.Event()
+    stop = asyncio.Event()
     out_pcm_buf = np.array([], dtype=np.float32)
     pcm16_buf = np.array([], dtype=np.float32)
 
@@ -331,19 +353,25 @@ async def handle_chat(request: web.Request) -> web.WebSocketResponse:
         logger.info("[chat] connected, handshake sent")
 
         def worker():
+            n = 0
             try:
-                while True:
-                    chunk = in_q.get()
+                while not worker_stop.is_set():
+                    try:
+                        chunk = in_q.get(timeout=0.25)
+                    except queue.Empty:
+                        continue
                     if chunk is None:
                         break
+                    n += 1
                     omni.prefill(chunk)
-                    text, _is_listen = omni.decode()
-                    audio = omni.collect_new_audio()
-                    loop.call_soon_threadsafe(out_q.put_nowait, (text, audio))
+                    text, is_listen = omni.decode()
+                    logger.info("[chunk %d] is_listen=%s text=%r", n, is_listen, (text or "")[:60])
+                    if text:
+                        loop.call_soon_threadsafe(text_q.put_nowait, text)
             except Exception as e:
-                loop.call_soon_threadsafe(out_q.put_nowait, e)
+                loop.call_soon_threadsafe(text_q.put_nowait, e)
             finally:
-                loop.call_soon_threadsafe(out_q.put_nowait, sentinel)
+                loop.call_soon_threadsafe(text_q.put_nowait, sentinel)
 
         async def send_opus(pcm: np.ndarray, flush: bool = False):
             nonlocal out_pcm_buf
@@ -377,36 +405,58 @@ async def handle_chat(request: web.Request) -> web.WebSocketResponse:
                     pcm16 = soxr.resample(pcm24.astype(np.float32), OPUS_SR, MODEL_IN_SR)
                     pcm16_buf = np.concatenate([pcm16_buf, pcm16])
                     while len(pcm16_buf) >= CHUNK_SAMPLES:
-                        in_q.put(np.ascontiguousarray(pcm16_buf[:CHUNK_SAMPLES]))
+                        c = np.ascontiguousarray(pcm16_buf[:CHUNK_SAMPLES])
                         pcm16_buf = pcm16_buf[CHUNK_SAMPLES:]
+                        try:
+                            in_q.put_nowait(c)
+                        except queue.Full:        # drop oldest, keep latency bounded
+                            try:
+                                in_q.get_nowait()
+                            except queue.Empty:
+                                pass
+                            try:
+                                in_q.put_nowait(c)
+                            except queue.Full:
+                                pass
                 elif msg.type in (web.WSMsgType.CLOSE, web.WSMsgType.ERROR):
                     break
-            in_q.put(None)
 
-        async def sender():
-            nonlocal out_pcm_buf
+        async def text_sender():
             while True:
-                item = await out_q.get()
+                item = await text_q.get()
                 if item is sentinel:
                     break
                 if isinstance(item, Exception):
                     logger.error("[chat] worker error: %s", item)
                     break
-                text, audio = item
-                if text and not ws.closed:
-                    await ws.send_bytes(TAG_TEXT + text.encode("utf-8"))
+                if item and not ws.closed:
+                    await ws.send_bytes(TAG_TEXT + item.encode("utf-8"))
+
+        async def wav_poller():
+            # Drain the async TTS WAV output every 0.1s and stream it as Opus (0x01).
+            while not stop.is_set():
+                audio = await loop.run_in_executor(None, omni.collect_new_audio)
                 if audio is not None and len(audio):
                     await send_opus(audio)
+                try:
+                    await asyncio.wait_for(stop.wait(), timeout=0.1)
+                except asyncio.TimeoutError:
+                    pass
+            audio = await loop.run_in_executor(None, omni.collect_new_audio)  # final drain
+            if audio is not None and len(audio):
+                await send_opus(audio)
             if len(out_pcm_buf):
                 await send_opus(np.array([], dtype=np.float32), flush=True)
 
         worker_fut = loop.run_in_executor(None, worker)
+        poller = asyncio.create_task(wav_poller())
         try:
-            await asyncio.gather(reader(), sender())
+            await asyncio.gather(reader(), text_sender())
         finally:
-            in_q.put(None)
+            worker_stop.set()
+            stop.set()
             await worker_fut
-            # Clean up for the next session in the background (server restart is slow).
+            await poller
             await loop.run_in_executor(None, omni.break_, "disconnect")
             if not ws.closed:
                 await ws.close()
